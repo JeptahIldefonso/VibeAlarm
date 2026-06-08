@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -39,6 +40,7 @@ namespace VibeAlarm
         private ThemePreset activeTheme = null!;
         private IReadOnlyList<ThemePreset> appThemes = Array.Empty<ThemePreset>();
         private System.Windows.Forms.Timer backgroundAlarmTicker = null!;
+        private System.Media.SoundPlayer? activeAlarmPlayer;
 
         private TabControl mobileNavBar = null!;
         private TabPage pageDashboard = null!;
@@ -428,8 +430,15 @@ namespace VibeAlarm
 
                 if (alert.Type == TaskTypeAlarm)
                 {
-                    System.Media.SystemSounds.Beep.Play();
-                    MessageBox.Show($"CRITICAL ALARM:\n\nTime to execute your routine:\n\"{alert.Title}\"!", "VibeAlarm System Trigger", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    try
+                    {
+                        PlayAlarmSound();
+                        MessageBox.Show($"CRITICAL ALARM:\n\nTime to execute your routine:\n\"{alert.Title}\"!", "VibeAlarm System Trigger", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    }
+                    finally
+                    {
+                        StopAlarmSound();
+                    }
                 }
                 else
                 {
@@ -437,6 +446,29 @@ namespace VibeAlarm
                     MessageBox.Show($"REMINDER:\n\n\"{alert.Title}\" is scheduled for this time slot.", "Workspace Notification", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
+        }
+
+        private void PlayAlarmSound()
+        {
+            string alarmPath = Path.Combine(AppContext.BaseDirectory, "Assets", "alarm.wav");
+
+            if (!File.Exists(alarmPath))
+            {
+                System.Media.SystemSounds.Beep.Play();
+                return;
+            }
+
+            StopAlarmSound();
+            activeAlarmPlayer = new System.Media.SoundPlayer(alarmPath);
+            activeAlarmPlayer.Load();
+            activeAlarmPlayer.PlayLooping();
+        }
+
+        private void StopAlarmSound()
+        {
+            activeAlarmPlayer?.Stop();
+            activeAlarmPlayer?.Dispose();
+            activeAlarmPlayer = null;
         }
 
         private void BtnAddTask_Click(object? sender, EventArgs e)
