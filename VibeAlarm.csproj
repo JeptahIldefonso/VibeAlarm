@@ -6,11 +6,12 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Update="Assets\alarm.wav">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+<None Update="Assets\**\*.*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 

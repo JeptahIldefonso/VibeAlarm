@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace VibeAlarm
@@ -30,18 +31,24 @@ namespace VibeAlarm
         private readonly List<TaskItem> masterTaskList = new();
         private readonly HashSet<string> triggeredAlertKeys = new(StringComparer.OrdinalIgnoreCase);
         private string activeCalendarDay = DateTime.Now.DayOfWeek.ToString();
+        private DateTime activeCalendarDate = DateTime.Today;
+        private DateTime displayedCalendarMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
         private string activeView = "Tasks";
         private string searchFilterQuery = string.Empty;
 
-        // Spotify Premium Inspired Theme Palette
-        private static readonly Color PrimaryBg = Color.FromArgb(18, 18, 18);
-        private static readonly Color SecondaryBg = Color.FromArgb(19, 22, 26);
-        private static readonly Color SidebarBg = Color.FromArgb(0, 0, 0);
-        private static readonly Color CardBgColor = Color.FromArgb(22, 25, 29);
-        private static readonly Color CardHoverBg = Color.FromArgb(27, 31, 36);
-        private static readonly Color AccentColor = Color.FromArgb(30, 215, 96); // Authentic Spotify Green
-        private static readonly Color MutedTextColor = Color.FromArgb(179, 179, 179);
-        private static readonly Color BorderColor = Color.FromArgb(45, 49, 55);
+        // Dynamic Theme Preset properties
+        private ThemePreset currentTheme = null!;
+        private readonly List<ThemePreset> themePresets = new();
+
+        private Color PrimaryBg => currentTheme.PrimaryBg;
+        private Color SecondaryBg => currentTheme.SecondaryBg;
+        private Color SidebarBg => currentTheme.SidebarBg;
+        private Color CardBgColor => currentTheme.CardBgColor;
+        private Color CardHoverBg => currentTheme.CardHoverBg;
+        private Color AccentColor => currentTheme.AccentColor;
+        private Color TextColor => currentTheme.TextColor;
+        private Color MutedTextColor => currentTheme.MutedTextColor;
+        private Color BorderColor => currentTheme.BorderColor;
         private static readonly Color WarningColor = Color.FromArgb(245, 181, 38);
         private static readonly Color AlarmColor = Color.FromArgb(255, 89, 89);
         private static readonly Color PurpleColor = Color.FromArgb(168, 105, 255);
@@ -77,12 +84,19 @@ namespace VibeAlarm
         private Panel sidebarProgressTrack = null!;
         private Panel sidebarProgressFill = null!;
 
+        // Persistent controls stored for live theme application
+        private Label lblAppLogo = null!;
+        private Panel sidebarProgressCard = null!;
+        private Label lblSidebarIcon = null!;
+        private Label lblSidebarEncouragement = null!;
+
         // Dynamic Panels
         private FlowLayoutPanel taskListPanel = null!;
         private FlowLayoutPanel dashboardFocusPanel = null!;
         private TableLayoutPanel calendarStripMatrix = null!;
         private FlowLayoutPanel calendarListPanel = null!;
         private Label lblCalendarProgress = null!;
+        private Label lblCalendarMonth = null!;
         private Label lblTaskCount = null!;
         private Button btnClearData = null!;
         private Label lblAmbientNowPlaying = null!;
@@ -95,11 +109,17 @@ namespace VibeAlarm
             this.SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
             this.UpdateStyles();
 
+            InitializeThemePresets();
+            EnsureDefaultAmbientSounds();
+            LoadTasksFromJson();
+            LoadSettings();
+
             InitializeComponent();
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             BuildDesktopInterface();
-            LoadSampleMockData();
+            ApplyTheme(currentTheme);
+
             InitializeAlarmEngine();
-            RenderActiveView();
         }
 
         private void BuildDesktopInterface()
@@ -125,7 +145,7 @@ namespace VibeAlarm
 
         private void BuildSidebarNavigation()
         {
-            Label lblAppLogo = CreateLabel("TaskFlow", new Point(32, 34), new Size(180, 34), 20F, FontStyle.Bold, Color.White);
+            lblAppLogo = CreateLabel("TaskFlow", new Point(32, 34), new Size(180, 34), 20F, FontStyle.Bold, TextColor);
             sidebarPanel.Controls.Add(lblAppLogo);
 
             activeNavIndicator = new Panel { Width = 5, Height = 52, BackColor = AccentColor, Location = new Point(0, 0) };
@@ -159,7 +179,7 @@ namespace VibeAlarm
             };
             btn.FlatAppearance.BorderSize = 0;
             btn.FlatAppearance.MouseDownBackColor = Color.Transparent;
-            btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(15, 15, 15);
+            btn.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
 
             btn.Click += (s, e) =>
             {
@@ -172,22 +192,22 @@ namespace VibeAlarm
 
         private void BuildSidebarProgressCard()
         {
-            Panel progressCard = CreateCard(new Point(18, 580), new Size(214, 144), 8, Color.FromArgb(8, 9, 11), BorderColor);
-            progressCard.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            sidebarProgressCard = CreateCard(new Point(18, 580), new Size(214, 144), 8, currentTheme.IsLight ? Color.FromArgb(240, 240, 245) : Color.FromArgb(8, 9, 11), BorderColor);
+            sidebarProgressCard.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
 
-            Label icon = CreateLabel("▣", new Point(22, 24), new Size(28, 28), 17F, FontStyle.Bold, AccentColor);
-            lblSidebarRemaining = CreateLabel("0 Tasks Remaining", new Point(54, 27), new Size(140, 24), 10.5F, FontStyle.Bold, Color.White);
-            Label encouragement = CreateLabel("Keep going, Jeptah!", new Point(22, 66), new Size(170, 20), 9F, FontStyle.Regular, MutedTextColor);
+            lblSidebarIcon = CreateLabel("▣", new Point(22, 24), new Size(28, 28), 17F, FontStyle.Bold, AccentColor);
+            lblSidebarRemaining = CreateLabel("0 Tasks Remaining", new Point(54, 27), new Size(140, 24), 10.5F, FontStyle.Bold, TextColor);
+            lblSidebarEncouragement = CreateLabel("Keep going, Jeptah!", new Point(22, 66), new Size(170, 20), 9F, FontStyle.Regular, MutedTextColor);
 
-            sidebarProgressTrack = new Panel { Location = new Point(22, 106), Size = new Size(132, 10), BackColor = Color.FromArgb(25, 29, 33) };
+            sidebarProgressTrack = new Panel { Location = new Point(22, 106), Size = new Size(132, 10), BackColor = currentTheme.IsLight ? Color.FromArgb(220, 220, 225) : Color.FromArgb(25, 29, 33) };
             sidebarProgressFill = new Panel { Location = new Point(0, 0), Size = new Size(0, 10), BackColor = AccentColor };
-            lblSidebarPercent = CreateLabel("0%", new Point(172, 100), new Size(34, 22), 10F, FontStyle.Bold, Color.White);
+            lblSidebarPercent = CreateLabel("0%", new Point(172, 100), new Size(34, 22), 10F, FontStyle.Bold, TextColor);
 
             sidebarProgressTrack.Controls.Add(sidebarProgressFill);
-            progressCard.Controls.AddRange(new Control[] { icon, lblSidebarRemaining, encouragement, sidebarProgressTrack, lblSidebarPercent });
+            sidebarProgressCard.Controls.AddRange(new Control[] { lblSidebarIcon, lblSidebarRemaining, lblSidebarEncouragement, sidebarProgressTrack, lblSidebarPercent });
             RoundControl(sidebarProgressTrack, 5);
             RoundControl(sidebarProgressFill, 5);
-            sidebarPanel.Controls.Add(progressCard);
+            sidebarPanel.Controls.Add(sidebarProgressCard);
         }
 
         private void BuildMainWorkspaceLayout()
@@ -199,7 +219,7 @@ namespace VibeAlarm
             mainContainer.Controls.Add(headerPanel);
 
             // Responsive Greeting Setup
-            lblGreeting = CreateLabel("Good Evening, Jeptah", new Point(0, 18), new Size(520, 40), 23F, FontStyle.Bold, Color.White);
+            lblGreeting = CreateLabel("Good Evening, Jeptah", new Point(0, 18), new Size(520, 40), 23F, FontStyle.Bold, TextColor);
             lblHeaderSubtitle = CreateLabel("You have 0 tasks remaining today.", new Point(2, 62), new Size(520, 24), 12F, FontStyle.Regular, MutedTextColor);
             headerPanel.Controls.AddRange(new Control[] { lblGreeting, lblHeaderSubtitle });
 
@@ -210,7 +230,7 @@ namespace VibeAlarm
                 Size = new Size(310, 42),
                 Font = new Font("Segoe UI", 12F),
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.FromArgb(16, 18, 22),
+                BackColor = CardBgColor,
                 ForeColor = MutedTextColor,
                 Text = "  Search tasks...",
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
@@ -220,7 +240,7 @@ namespace VibeAlarm
                 if (txtSearch.Text == PlaceholderSearch || txtSearch.Text.Trim() == "Search tasks...")
                 {
                     txtSearch.Text = string.Empty;
-                    txtSearch.ForeColor = Color.White;
+                    txtSearch.ForeColor = TextColor;
                 }
             };
 
@@ -276,7 +296,10 @@ namespace VibeAlarm
                 {
                     masterTaskList.Add(dialog.GeneratedTask);
                     activeCalendarDay = dialog.GeneratedTask.Day;
+                    activeCalendarDate = NextDateForDay(dialog.GeneratedTask.Day, DateTime.Today);
+                    displayedCalendarMonth = new DateTime(activeCalendarDate.Year, activeCalendarDate.Month, 1);
                     RefreshDataCounters();
+                    SaveTasksToJson();
                 }
             }
         }
@@ -331,7 +354,6 @@ namespace VibeAlarm
         {
             UpdateGreetingContext();
 
-            // Refactored to dual clean structural column row layout
             TableLayoutPanel statsRowPanel = new TableLayoutPanel
             {
                 Location = new Point(0, 4),
@@ -368,38 +390,64 @@ namespace VibeAlarm
         {
             UpdateGreetingContext();
 
+            Panel monthHeader = CreateCard(new Point(0, 4), new Size(970, 58), 8, Color.FromArgb(18, 21, 25), BorderColor);
+            monthHeader.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblCalendarMonth = CreateLabel(displayedCalendarMonth.ToString("MMMM yyyy"), new Point(24, 16), new Size(260, 26), 14F, FontStyle.Bold, Color.White);
+
+            Button btnPrev = CreateGhostButton("<", new Point(740, 12), new Size(42, 34));
+            btnPrev.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnPrev.Click += (s, e) =>
+            {
+                displayedCalendarMonth = displayedCalendarMonth.AddMonths(-1);
+                RenderActiveView();
+            };
+
+            Button btnToday = CreateGhostButton("Today", new Point(792, 12), new Size(78, 34));
+            btnToday.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnToday.Click += (s, e) =>
+            {
+                activeCalendarDate = DateTime.Today;
+                activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
+                displayedCalendarMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+                RenderActiveView();
+            };
+
+            Button btnNext = CreateGhostButton(">", new Point(880, 12), new Size(42, 34));
+            btnNext.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnNext.Click += (s, e) =>
+            {
+                displayedCalendarMonth = displayedCalendarMonth.AddMonths(1);
+                RenderActiveView();
+            };
+            monthHeader.Controls.AddRange(new Control[] { lblCalendarMonth, btnPrev, btnToday, btnNext });
+
             calendarStripMatrix = new TableLayoutPanel
             {
-                Location = new Point(0, 4),
-                Size = new Size(940, 76),
+                Location = new Point(0, 78),
+                Size = new Size(970, 304),
                 ColumnCount = 7,
-                RowCount = 1,
+                RowCount = 7,
                 BackColor = Color.Transparent,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
 
             for (int i = 0; i < 7; i++)
                 calendarStripMatrix.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 14.28F));
+            calendarStripMatrix.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            for (int i = 0; i < 6; i++)
+                calendarStripMatrix.RowStyles.Add(new RowStyle(SizeType.Percent, 16.66F));
 
-            RebuildCalendarWeeklyStrip();
+            RebuildCalendarMonthGrid();
 
-            Panel actionRow = CreateCard(new Point(0, 96), new Size(940, 56), 6, SecondaryBg, BorderColor);
+            Panel actionRow = CreateCard(new Point(0, 398), new Size(970, 56), 6, SecondaryBg, BorderColor);
             actionRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lblCalendarProgress = CreateLabel("0 objectives resolved today", new Point(20, 18), new Size(400, 22), 11F, FontStyle.Bold, Color.White);
-
-            Button btnToday = CreateGhostButton("Jump to Today", new Point(800, 11), new Size(120, 34));
-            btnToday.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnToday.Click += (s, e) =>
-            {
-                activeCalendarDay = DateTime.Now.DayOfWeek.ToString();
-                RenderActiveView();
-            };
-            actionRow.Controls.AddRange(new Control[] { lblCalendarProgress, btnToday });
+            actionRow.Controls.Add(lblCalendarProgress);
 
             calendarListPanel = new FlowLayoutPanel
             {
-                Location = new Point(0, 168),
-                Size = new Size(940, 440),
+                Location = new Point(0, 470),
+                Size = new Size(970, 150),
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
                 AutoScroll = true,
@@ -407,50 +455,79 @@ namespace VibeAlarm
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
 
-            contentPanel.Controls.AddRange(new Control[] { calendarStripMatrix, actionRow, calendarListPanel });
+            contentPanel.Controls.AddRange(new Control[] { monthHeader, calendarStripMatrix, actionRow, calendarListPanel });
         }
 
-        private void RebuildCalendarWeeklyStrip()
+        private void RebuildCalendarMonthGrid()
         {
             calendarStripMatrix.Controls.Clear();
-            string actualToday = DateTime.Now.DayOfWeek.ToString();
 
             for (int i = 0; i < WeekDays.Length; i++)
             {
-                string analyticalDay = WeekDays[i];
-                bool activeFocusTarget = analyticalDay == activeCalendarDay;
-                bool structuralMatch = analyticalDay == actualToday;
-
-                Panel wrapper = new Panel { Dock = DockStyle.Fill, Margin = new Padding(2) };
-
-                Button itemBtn = new Button
-                {
-                    Text = $"{ShortWeekDays[i]}\n{i + 1:D2}",
-                    Tag = analyticalDay,
-                    Dock = DockStyle.Fill,
-                    FlatStyle = FlatStyle.Flat,
-                    Font = new Font("Segoe UI Semibold", 9.5F),
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    BackColor = activeFocusTarget ? AccentColor : SecondaryBg,
-                    ForeColor = activeFocusTarget ? Color.Black : Color.White,
-                    Cursor = Cursors.Hand
-                };
-                itemBtn.FlatAppearance.BorderSize = structuralMatch ? 1 : 0;
-                itemBtn.FlatAppearance.BorderColor = AccentColor;
-
-                itemBtn.Click += (s, e) =>
-                {
-                    if (s is Button target)
-                    {
-                        activeCalendarDay = target.Tag?.ToString() ?? actualToday;
-                        RenderActiveView();
-                    }
-                };
-
-                wrapper.Controls.Add(itemBtn);
-                RoundControl(itemBtn, 4);
-                calendarStripMatrix.Controls.Add(wrapper, i, 0);
+                Label dayHeader = CreateLabel(ShortWeekDays[i], new Point(0, 0), new Size(80, 24), 9F, FontStyle.Bold, MutedTextColor);
+                dayHeader.TextAlign = ContentAlignment.MiddleCenter;
+                dayHeader.Dock = DockStyle.Fill;
+                calendarStripMatrix.Controls.Add(dayHeader, i, 0);
             }
+
+            DateTime firstDay = displayedCalendarMonth;
+            int leadingDays = (int)firstDay.DayOfWeek;
+            DateTime gridDate = firstDay.AddDays(-leadingDays);
+
+            for (int row = 1; row <= 6; row++)
+            {
+                for (int col = 0; col < 7; col++)
+                {
+                    DateTime currentDate = gridDate;
+                    calendarStripMatrix.Controls.Add(BuildCalendarDayCell(currentDate), col, row);
+                    gridDate = gridDate.AddDays(1);
+                }
+            }
+        }
+
+        private Control BuildCalendarDayCell(DateTime date)
+        {
+            bool isCurrentMonth = date.Month == displayedCalendarMonth.Month && date.Year == displayedCalendarMonth.Year;
+            bool isSelected = date.Date == activeCalendarDate.Date;
+            bool isToday = date.Date == DateTime.Today;
+            int scheduledCount = masterTaskList.Count(t => t.Day.Equals(date.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase));
+            int completedCount = masterTaskList.Count(t => t.Completed && t.Day.Equals(date.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase));
+
+            Button cell = new Button
+            {
+                Text = scheduledCount > 0 ? $"{date.Day}\n{scheduledCount} task{(scheduledCount == 1 ? "" : "s")}" : date.Day.ToString(),
+                Tag = date,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3),
+                FlatStyle = FlatStyle.Flat,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI Semibold", scheduledCount > 0 ? 8.5F : 10F),
+                BackColor = isSelected ? AccentColor : isToday ? Color.FromArgb(24, 42, 32) : Color.FromArgb(18, 21, 25),
+                ForeColor = isSelected ? Color.Black : isCurrentMonth ? Color.White : Color.FromArgb(90, 94, 100),
+                Cursor = Cursors.Hand
+            };
+            cell.FlatAppearance.BorderSize = scheduledCount > 0 || isToday ? 1 : 0;
+            cell.FlatAppearance.BorderColor = isToday ? AccentColor : BorderColor;
+            cell.FlatAppearance.MouseOverBackColor = isSelected ? AccentColor : CardHoverBg;
+            cell.Click += (s, e) =>
+            {
+                if (s is not Button clickedCell || clickedCell.Tag is not DateTime clickedDate)
+                {
+                    return;
+                }
+
+                activeCalendarDate = clickedDate;
+                activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
+                displayedCalendarMonth = new DateTime(activeCalendarDate.Year, activeCalendarDate.Month, 1);
+                RenderActiveView();
+            };
+
+            if (completedCount > 0 && scheduledCount > 0)
+            {
+                cell.Text += $"\n{completedCount} done";
+            }
+
+            return cell;
         }
 
         private void RenderDashboardView()
@@ -494,22 +571,51 @@ namespace VibeAlarm
                 {
                     masterTaskList.Clear();
                     RefreshDataCounters();
+                    SaveTasksToJson();
                 }
             };
 
-            Label lblSpecs = CreateLabel("App Release v1.4.2  •  Minimalist Core Design", new Point(2, 570), new Size(500, 22), 9F, FontStyle.Regular, MutedTextColor);
+            Button btnResetCompletion = CreateGhostButton("Reset Task Completion Status", new Point(0, 100), new Size(940, 46));
+            btnResetCompletion.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            btnResetCompletion.ForeColor = AccentColor;
+            btnResetCompletion.Click += (s, e) =>
+            {
+                foreach (var t in masterTaskList)
+                {
+                    t.Completed = false;
+                }
+                RefreshDataCounters();
+                SaveTasksToJson();
+                MessageBox.Show("All task completion statuses have been reset!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+
+            Label lblThemeSection = CreateLabel("THEME CONFIGURATION", new Point(2, 170), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
+
+            ComboBox cmbTheme = CreateCombo(new Point(0, 202), new Size(280, 32), themePresets.Select(t => t.Name).ToArray(), themePresets.IndexOf(currentTheme));
+            cmbTheme.SelectedIndexChanged += (s, e) =>
+            {
+                string selectedName = cmbTheme.SelectedItem?.ToString() ?? string.Empty;
+                var theme = themePresets.FirstOrDefault(t => t.Name == selectedName);
+                if (theme != null)
+                {
+                    ApplyTheme(theme);
+                    SaveSettings();
+                }
+            };
+
+            Label lblSpecs = CreateLabel("App Release v1.5.0  •  Themeable Productivity Core", new Point(2, 570), new Size(500, 22), 9F, FontStyle.Regular, MutedTextColor);
             lblSpecs.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
 
-            contentPanel.Controls.AddRange(new Control[] { lblSection, btnClearData, lblSpecs });
+            contentPanel.Controls.AddRange(new Control[] { lblSection, btnClearData, btnResetCompletion, lblThemeSection, cmbTheme, lblSpecs });
         }
 
         private void RenderAmbientView()
         {
             UpdateGreetingContext();
 
-            Panel heroPanel = CreateCard(new Point(0, 4), new Size(970, 106), 8, Color.FromArgb(18, 21, 25), BorderColor);
+            Panel heroPanel = CreateCard(new Point(0, 4), new Size(970, 106), 8, CardBgColor, BorderColor);
             heroPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            Label title = CreateLabel("Ambient Soundscapes", new Point(24, 20), new Size(420, 28), 15F, FontStyle.Bold, Color.White);
+            Label title = CreateLabel("Ambient Soundscapes", new Point(24, 20), new Size(420, 28), 15F, FontStyle.Bold, TextColor);
             Label subtitle = CreateLabel("Play your own local focus audio offline while you study or work.", new Point(24, 52), new Size(700, 22), 10.5F, FontStyle.Regular, MutedTextColor);
             lblAmbientNowPlaying = CreateLabel(activeAmbientAlias == null ? "Nothing playing" : "Ambient audio playing", new Point(24, 76), new Size(500, 20), 9.5F, FontStyle.Bold, AccentColor);
 
@@ -521,9 +627,9 @@ namespace VibeAlarm
             Button importButton = CreatePrimaryButton("+  Add Local Sound", new Point(0, 132), new Size(170, 40));
             importButton.Click += (s, e) => ImportAndPlayAmbientFile();
 
-            Panel volumePanel = CreateCard(new Point(0, 202), new Size(970, 92), 8, Color.FromArgb(18, 21, 25), BorderColor);
+            Panel volumePanel = CreateCard(new Point(0, 202), new Size(970, 92), 8, CardBgColor, BorderColor);
             volumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            Label volumeTitle = CreateLabel("Sound Volume", new Point(24, 18), new Size(220, 24), 12F, FontStyle.Bold, Color.White);
+            Label volumeTitle = CreateLabel("Sound Volume", new Point(24, 18), new Size(220, 24), 12F, FontStyle.Bold, TextColor);
             Label volumeHint = CreateLabel("Adjust the ambient sound level without changing your task alarms.", new Point(24, 46), new Size(440, 20), 9.5F, FontStyle.Regular, MutedTextColor);
             ambientVolumeSlider = new TrackBar
             {
@@ -533,7 +639,7 @@ namespace VibeAlarm
                 Maximum = 100,
                 TickFrequency = 10,
                 Value = ambientVolume,
-                BackColor = Color.FromArgb(18, 21, 25),
+                BackColor = CardBgColor,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             Label volumeValue = CreateLabel($"{ambientVolume}%", new Point(850, 31), new Size(70, 24), 11F, FontStyle.Bold, AccentColor);
@@ -546,13 +652,28 @@ namespace VibeAlarm
             };
             volumePanel.Controls.AddRange(new Control[] { volumeTitle, volumeHint, ambientVolumeSlider, volumeValue });
 
-            Panel emptyPanel = CreateCard(new Point(0, 318), new Size(970, 110), 8, Color.FromArgb(18, 21, 25), BorderColor);
-            emptyPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            Label emptyTitle = CreateLabel("No built-in sounds", new Point(24, 24), new Size(320, 24), 12F, FontStyle.Bold, Color.White);
-            Label emptyText = CreateLabel("Use Add Local Sound to choose an mp3, mp4, wav, or other audio file from your computer.", new Point(24, 54), new Size(760, 22), 10F, FontStyle.Regular, MutedTextColor);
-            emptyPanel.Controls.AddRange(new Control[] { emptyTitle, emptyText });
+            Panel builtinPanel = CreateCard(new Point(0, 318), new Size(970, 150), 8, CardBgColor, BorderColor);
+            builtinPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            Label builtinTitle = CreateLabel("Offline Focus Sounds", new Point(24, 20), new Size(320, 24), 12F, FontStyle.Bold, TextColor);
+            Label builtinText = CreateLabel("Synthesized offline loops to drown out background noise and boost productivity.", new Point(24, 48), new Size(760, 20), 9.5F, FontStyle.Regular, MutedTextColor);
 
-            contentPanel.Controls.AddRange(new Control[] { heroPanel, importButton, volumePanel, emptyPanel });
+            Button btnPlayBrown = CreateGhostButton("Play Brownian Focus", new Point(24, 86), new Size(180, 38));
+            btnPlayBrown.Click += (s, e) =>
+            {
+                string path = Path.Combine(AppContext.BaseDirectory, "Assets", "brown_noise.wav");
+                PlayAmbientFile(path, "Brownian Focus");
+            };
+
+            Button btnPlayRain = CreateGhostButton("Play Rain Soundscape", new Point(220, 86), new Size(180, 38));
+            btnPlayRain.Click += (s, e) =>
+            {
+                string path = Path.Combine(AppContext.BaseDirectory, "Assets", "rain.wav");
+                PlayAmbientFile(path, "Rain Soundscape");
+            };
+
+            builtinPanel.Controls.AddRange(new Control[] { builtinTitle, builtinText, btnPlayBrown, btnPlayRain });
+
+            contentPanel.Controls.AddRange(new Control[] { heroPanel, importButton, volumePanel, builtinPanel });
         }
 
         private Panel CreateCompactStatCard(string header, Color iconColor, out Label lblValue)
@@ -603,6 +724,17 @@ namespace VibeAlarm
             return SourceList.Where(t => t.Title.Contains(searchFilterQuery, StringComparison.OrdinalIgnoreCase));
         }
 
+        private static DateTime NextDateForDay(string dayName, DateTime fromDate)
+        {
+            if (!Enum.TryParse(dayName, true, out DayOfWeek targetDay))
+            {
+                return fromDate.Date;
+            }
+
+            int daysUntilTarget = ((int)targetDay - (int)fromDate.DayOfWeek + 7) % 7;
+            return fromDate.Date.AddDays(daysUntilTarget);
+        }
+
         private void BindTaskListView()
         {
             taskListPanel.Controls.Clear();
@@ -624,16 +756,17 @@ namespace VibeAlarm
         private void BindCalendarView()
         {
             calendarListPanel.Controls.Clear();
-            var items = GetFilteredTasks(masterTaskList.Where(t => t.Day == activeCalendarDay)).ToList();
-            lblCalendarProgress.Text = $"{items.Count(t => t.Completed)} of {items.Count} parameters processed";
+            activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
+            var items = GetFilteredTasks(masterTaskList.Where(t => t.Day.Equals(activeCalendarDay, StringComparison.OrdinalIgnoreCase))).ToList();
+            lblCalendarProgress.Text = $"{activeCalendarDate:dddd, MMMM d, yyyy}  •  {items.Count(t => t.Completed)} of {items.Count} tasks completed";
 
             if (!items.Any())
             {
-                calendarListPanel.Controls.Add(CreateEmptyStateRow("Clear timeline.", "No specific objectives mapped onto this grid node."));
+                calendarListPanel.Controls.Add(CreateEmptyStateRow("No tasks scheduled.", $"Nothing is mapped to {activeCalendarDate:dddd, MMMM d}."));
                 return;
             }
 
-            foreach (TaskItem task in items)
+            foreach (TaskItem task in items.OrderBy(t => t.RemindTime))
             {
                 calendarListPanel.Controls.Add(BuildTaskRowCard(task));
             }
@@ -749,7 +882,7 @@ namespace VibeAlarm
             return Math.Max(620, availableWidth - 24);
         }
 
-        private static Color GetTaskTypeColor(string taskType)
+        private Color GetTaskTypeColor(string taskType)
         {
             return taskType switch
             {
@@ -913,7 +1046,7 @@ namespace VibeAlarm
             lblHeaderSubtitle.Text = activeView switch
             {
                 "Dashboard" => "A quick look at what needs your attention.",
-                "Calendar" => "Plan your week and check what is due next.",
+                "Calendar" => "See this month, today, and every scheduled task by date.",
                 "Settings" => "Tune the app and manage your task data.",
                 _ => $"You have {masterTaskList.Count(t => !t.Completed)} tasks remaining today."
             };
@@ -1023,14 +1156,349 @@ namespace VibeAlarm
             activeAlarmPlayer = null;
         }
 
-        private void LoadSampleMockData()
+        private void InitializeThemePresets()
         {
-            masterTaskList.AddRange(new[]
+            // 1. Spotify Dark (Default)
+            themePresets.Add(new ThemePreset
             {
-                new TaskItem { Id = "1", Title = "Review design system guidelines and assets", Day = "Monday", RemindTime = "08:00 AM", Type = TaskTypeImportant, Completed = true },
-                new TaskItem { Id = "2", Title = "Sync development branch with production matrix", Day = DateTime.Now.DayOfWeek.ToString(), RemindTime = "07:30 AM", Type = TaskTypeAlarm, Completed = false },
-                new TaskItem { Id = "3", Title = "Refactor background layout memory allocation loops", Day = DateTime.Now.DayOfWeek.ToString(), RemindTime = "11:00 PM", Type = TaskTypeNotification, Completed = false }
+                Name = "Spotify Dark",
+                PrimaryBg = Color.FromArgb(18, 18, 18),
+                SidebarBg = Color.FromArgb(0, 0, 0),
+                SecondaryBg = Color.FromArgb(19, 22, 26),
+                CardBgColor = Color.FromArgb(18, 21, 25),
+                CardHoverBg = Color.FromArgb(27, 31, 36),
+                AccentColor = Color.FromArgb(30, 215, 96),
+                TextColor = Color.White,
+                MutedTextColor = Color.FromArgb(179, 179, 179),
+                BorderColor = Color.FromArgb(45, 49, 55),
+                IsLight = false
             });
+
+            // 2. Ocean Breeze (Slate Blue)
+            themePresets.Add(new ThemePreset
+            {
+                Name = "Ocean Breeze",
+                PrimaryBg = Color.FromArgb(15, 23, 42),
+                SidebarBg = Color.FromArgb(9, 15, 30),
+                SecondaryBg = Color.FromArgb(30, 41, 59),
+                CardBgColor = Color.FromArgb(23, 37, 84),
+                CardHoverBg = Color.FromArgb(30, 58, 138),
+                AccentColor = Color.FromArgb(56, 189, 248),
+                TextColor = Color.FromArgb(248, 250, 252),
+                MutedTextColor = Color.FromArgb(148, 163, 184),
+                BorderColor = Color.FromArgb(51, 65, 85),
+                IsLight = false
+            });
+
+            // 3. Forest Green
+            themePresets.Add(new ThemePreset
+            {
+                Name = "Forest Green",
+                PrimaryBg = Color.FromArgb(20, 24, 20),
+                SidebarBg = Color.FromArgb(10, 12, 10),
+                SecondaryBg = Color.FromArgb(30, 36, 30),
+                CardBgColor = Color.FromArgb(24, 32, 24),
+                CardHoverBg = Color.FromArgb(32, 44, 32),
+                AccentColor = Color.FromArgb(74, 222, 128),
+                TextColor = Color.FromArgb(244, 244, 245),
+                MutedTextColor = Color.FromArgb(161, 161, 170),
+                BorderColor = Color.FromArgb(44, 52, 44),
+                IsLight = false
+            });
+
+            // 4. Sunset Orange
+            themePresets.Add(new ThemePreset
+            {
+                Name = "Sunset Orange",
+                PrimaryBg = Color.FromArgb(24, 18, 18),
+                SidebarBg = Color.FromArgb(15, 10, 10),
+                SecondaryBg = Color.FromArgb(36, 24, 24),
+                CardBgColor = Color.FromArgb(32, 21, 21),
+                CardHoverBg = Color.FromArgb(44, 28, 28),
+                AccentColor = Color.FromArgb(251, 146, 60),
+                TextColor = Color.FromArgb(244, 244, 245),
+                MutedTextColor = Color.FromArgb(161, 161, 170),
+                BorderColor = Color.FromArgb(52, 36, 36),
+                IsLight = false
+            });
+
+            // 5. Nordic Light
+            themePresets.Add(new ThemePreset
+            {
+                Name = "Nordic Light",
+                PrimaryBg = Color.FromArgb(244, 244, 249),
+                SidebarBg = Color.FromArgb(228, 230, 235),
+                SecondaryBg = Color.FromArgb(255, 255, 255),
+                CardBgColor = Color.FromArgb(255, 255, 255),
+                CardHoverBg = Color.FromArgb(240, 240, 245),
+                AccentColor = Color.FromArgb(79, 70, 229),
+                TextColor = Color.FromArgb(17, 24, 39),
+                MutedTextColor = Color.FromArgb(107, 114, 128),
+                BorderColor = Color.FromArgb(209, 213, 219),
+                IsLight = true
+            });
+
+            // Set default theme
+            currentTheme = themePresets[0];
+        }
+
+        private void ApplyTheme(ThemePreset newTheme)
+        {
+            currentTheme = newTheme;
+
+            // Update persistent container backgrounds
+            BackColor = currentTheme.PrimaryBg;
+            if (sidebarPanel != null) sidebarPanel.BackColor = currentTheme.SidebarBg;
+            if (mainContainer != null) mainContainer.BackColor = currentTheme.PrimaryBg;
+            if (activeNavIndicator != null) activeNavIndicator.BackColor = currentTheme.AccentColor;
+
+            // Update persistent header controls
+            if (lblGreeting != null) lblGreeting.ForeColor = currentTheme.TextColor;
+            if (lblHeaderSubtitle != null) lblHeaderSubtitle.ForeColor = currentTheme.MutedTextColor;
+
+            if (txtSearch != null)
+            {
+                txtSearch.BackColor = currentTheme.CardBgColor;
+                txtSearch.ForeColor = currentTheme.MutedTextColor;
+            }
+
+            if (btnNewTask != null)
+            {
+                btnNewTask.BackColor = currentTheme.AccentColor;
+                btnNewTask.ForeColor = currentTheme.IsLight ? Color.White : Color.Black;
+            }
+
+            // Update persistent sidebar controls
+            if (lblAppLogo != null) lblAppLogo.ForeColor = currentTheme.TextColor;
+
+            // Refresh progress card
+            if (sidebarProgressCard != null)
+            {
+                sidebarProgressCard.BackColor = currentTheme.IsLight ? Color.FromArgb(240, 240, 245) : Color.FromArgb(8, 9, 11);
+                sidebarProgressCard.Invalidate(); // Force redraw of borders
+            }
+
+            if (lblSidebarIcon != null) lblSidebarIcon.ForeColor = currentTheme.AccentColor;
+            if (lblSidebarRemaining != null) lblSidebarRemaining.ForeColor = currentTheme.TextColor;
+            if (lblSidebarPercent != null) lblSidebarPercent.ForeColor = currentTheme.TextColor;
+            if (lblSidebarEncouragement != null) lblSidebarEncouragement.ForeColor = currentTheme.MutedTextColor;
+
+            if (sidebarProgressTrack != null)
+            {
+                sidebarProgressTrack.BackColor = currentTheme.IsLight ? Color.FromArgb(220, 220, 225) : Color.FromArgb(25, 29, 33);
+            }
+            if (sidebarProgressFill != null)
+            {
+                sidebarProgressFill.BackColor = currentTheme.AccentColor;
+            }
+
+            if (btnDashboard != null) btnDashboard.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
+            if (btnTasks != null) btnTasks.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
+            if (btnCalendar != null) btnCalendar.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
+            if (btnAmbient != null) btnAmbient.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
+            if (btnSettings != null) btnSettings.FlatAppearance.MouseOverBackColor = currentTheme.IsLight ? Color.FromArgb(210, 212, 217) : Color.FromArgb(15, 15, 15);
+
+            // Re-render the active view to paint its controls with the new theme colors
+            RenderActiveView();
+        }
+
+        private void SaveTasksToJson()
+        {
+            try
+            {
+                string filePath = Path.Combine(AppContext.BaseDirectory, "tasks.json");
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                string json = System.Text.Json.JsonSerializer.Serialize(masterTaskList, options);
+                File.WriteAllText(filePath, json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to save tasks: {ex.Message}");
+            }
+        }
+
+        private void LoadTasksFromJson()
+        {
+            try
+            {
+                string filePath = Path.Combine(AppContext.BaseDirectory, "tasks.json");
+                if (File.Exists(filePath))
+                {
+                    string json = File.ReadAllText(filePath);
+                    var list = System.Text.Json.JsonSerializer.Deserialize<List<TaskItem>>(json);
+                    if (list != null)
+                    {
+                        masterTaskList.Clear();
+                        masterTaskList.AddRange(list);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load tasks: {ex.Message}");
+            }
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                string filePath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+                var dict = new Dictionary<string, string>
+                {
+                    { "Theme", currentTheme.Name }
+                };
+                string json = System.Text.Json.JsonSerializer.Serialize(dict);
+                File.WriteAllText(filePath, json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
+            }
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                string filePath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+                if (File.Exists(filePath))
+                {
+                    string json = File.ReadAllText(filePath);
+                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                    if (dict != null && dict.TryGetValue("Theme", out string? themeName))
+                    {
+                        var theme = themePresets.FirstOrDefault(t => t.Name.Equals(themeName, StringComparison.OrdinalIgnoreCase));
+                        if (theme != null)
+                        {
+                            currentTheme = theme;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+            }
+        }
+
+        private void EnsureDefaultAmbientSounds()
+        {
+            string assetsDir = Path.Combine(AppContext.BaseDirectory, "Assets");
+            if (!Directory.Exists(assetsDir))
+            {
+                Directory.CreateDirectory(assetsDir);
+            }
+
+            string brownPath = Path.Combine(assetsDir, "brown_noise.wav");
+            string rainPath = Path.Combine(assetsDir, "rain.wav");
+
+            if (!File.Exists(brownPath))
+            {
+                GenerateWavFile(brownPath, "brown", 5, 22050);
+            }
+            if (!File.Exists(rainPath))
+            {
+                GenerateWavFile(rainPath, "rain", 5, 22050);
+            }
+        }
+
+        private static void GenerateWavFile(string filePath, string type, int duration, int sampleRate)
+        {
+            int numSamples = duration * sampleRate;
+            int dataSize = numSamples * 2;
+            int fileSize = 36 + dataSize;
+
+            using FileStream fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            using BinaryWriter writer = new BinaryWriter(fs);
+
+            // RIFF header
+            writer.Write("RIFF".ToCharArray());
+            writer.Write(fileSize);
+            writer.Write("WAVE".ToCharArray());
+
+            // fmt chunk
+            writer.Write("fmt ".ToCharArray());
+            writer.Write(16); // Subchunk1Size
+            writer.Write((short)1); // AudioFormat (PCM = 1)
+            writer.Write((short)1); // NumChannels (Mono = 1)
+            writer.Write(sampleRate);
+            writer.Write(sampleRate * 2); // ByteRate
+            writer.Write((short)2); // BlockAlign
+            writer.Write((short)16); // BitsPerSample
+
+            // data chunk
+            writer.Write("data".ToCharArray());
+            writer.Write(dataSize);
+
+            Random random = new Random();
+            double lastOut = 0.0;
+            double rainDropFilter = 0.0;
+
+            for (int i = 0; i < numSamples; i++)
+            {
+                short sampleValue = 0;
+                if (type == "brown")
+                {
+                    double white = random.NextDouble() * 2.0 - 1.0;
+                    lastOut = (lastOut + (0.02 * white)) / 1.02;
+                    double val = lastOut * 3.5;
+                    if (val > 1.0) val = 1.0;
+                    if (val < -1.0) val = -1.0;
+                    sampleValue = (short)(val * 32767);
+                }
+                else if (type == "rain")
+                {
+                    double white = random.NextDouble() * 2.0 - 1.0;
+                    lastOut = (lastOut + (0.05 * white)) / 1.05;
+
+                    if (random.NextDouble() < 0.0006)
+                    {
+                        rainDropFilter = 0.8;
+                    }
+                    rainDropFilter *= 0.99;
+                    double patter = rainDropFilter * (random.NextDouble() - 0.5) * 1.5;
+
+                    double val = lastOut * 0.6 + patter * 0.4;
+                    if (val > 1.0) val = 1.0;
+                    if (val < -1.0) val = -1.0;
+                    sampleValue = (short)(val * 32767);
+                }
+
+                writer.Write(sampleValue);
+            }
+        }
+
+        private ComboBox CreateCombo(Point p, Size s, string[] items, int idx)
+        {
+            ComboBox b = new ComboBox
+            {
+                Location = p,
+                Size = s,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 24,
+                MaxDropDownItems = 8,
+                DropDownHeight = 196,
+                IntegralHeight = false,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = CardBgColor,
+                ForeColor = TextColor,
+                Font = new Font("Segoe UI", 9.5F)
+            };
+            b.Items.AddRange(items);
+            if (items.Length > 0) b.SelectedIndex = idx;
+            b.DrawItem += (sender, e) =>
+            {
+                if (sender is not ComboBox combo || e.Index < 0) return;
+                bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+                using SolidBrush background = new SolidBrush(selected ? Color.FromArgb(42, 48, 54) : CardBgColor);
+                using SolidBrush textBrush = new SolidBrush(TextColor);
+                e.Graphics.FillRectangle(background, e.Bounds);
+                e.Graphics.DrawString(combo.Items[e.Index]?.ToString() ?? string.Empty, combo.Font, textBrush, e.Bounds.X + 4, e.Bounds.Y + 3);
+                e.DrawFocusRectangle();
+            };
+            return b;
         }
 
         private void Form1_Load(object sender, EventArgs e)
