@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -7,13 +7,14 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace VibeAlarm
 {
     public partial class Form1 : Form
     {
         private const string PlaceholderTaskName = "What needs to be done?";
-        private const string PlaceholderSearch = "🔍 Search tasks...";
+        private const string PlaceholderSearch = "Search tasks...";
         private const string TaskTypeNotification = "Notification";
         private const string TaskTypeAlarm = "Alarm";
         private const string TaskTypeImportant = "Important";
@@ -151,11 +152,11 @@ namespace VibeAlarm
             activeNavIndicator = new Panel { Width = 5, Height = 52, BackColor = AccentColor, Location = new Point(0, 0) };
             sidebarPanel.Controls.Add(activeNavIndicator);
 
-            btnDashboard = CreateSidebarButton("⌂   Home", "Dashboard", 114);
-            btnTasks = CreateSidebarButton("✓   Tasks", "Tasks", 166);
-            btnCalendar = CreateSidebarButton("□   Calendar", "Calendar", 218);
-            btnAmbient = CreateSidebarButton("◉   Ambient", "Ambient", 270);
-            btnSettings = CreateSidebarButton("⚙   Settings", "Settings", 322);
+            btnDashboard = CreateSidebarButton("Home", "Dashboard", 114);
+            btnTasks = CreateSidebarButton("Tasks", "Tasks", 166);
+            btnCalendar = CreateSidebarButton("Calendar", "Calendar", 218);
+            btnAmbient = CreateSidebarButton("Ambient", "Ambient", 270);
+            btnSettings = CreateSidebarButton("Settings", "Settings", 322);
 
             sidebarPanel.Controls.AddRange(new Control[] { btnDashboard, btnTasks, btnCalendar, btnAmbient, btnSettings });
             BuildSidebarProgressCard();
@@ -195,7 +196,7 @@ namespace VibeAlarm
             sidebarProgressCard = CreateCard(new Point(18, 580), new Size(214, 144), 8, currentTheme.IsLight ? Color.FromArgb(240, 240, 245) : Color.FromArgb(8, 9, 11), BorderColor);
             sidebarProgressCard.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
 
-            lblSidebarIcon = CreateLabel("▣", new Point(22, 24), new Size(28, 28), 17F, FontStyle.Bold, AccentColor);
+            lblSidebarIcon = CreateLabel("[]", new Point(22, 24), new Size(28, 28), 17F, FontStyle.Bold, AccentColor);
             lblSidebarRemaining = CreateLabel("0 Tasks Remaining", new Point(54, 27), new Size(140, 24), 10.5F, FontStyle.Bold, TextColor);
             lblSidebarEncouragement = CreateLabel("Keep going, Jeptah!", new Point(22, 66), new Size(170, 20), 9F, FontStyle.Regular, MutedTextColor);
 
@@ -296,7 +297,7 @@ namespace VibeAlarm
                 {
                     masterTaskList.Add(dialog.GeneratedTask);
                     activeCalendarDay = dialog.GeneratedTask.Day;
-                    activeCalendarDate = NextDateForDay(dialog.GeneratedTask.Day, DateTime.Today);
+                    activeCalendarDate = GetTaskDate(dialog.GeneratedTask);
                     displayedCalendarMonth = new DateTime(activeCalendarDate.Year, activeCalendarDate.Month, 1);
                     RefreshDataCounters();
                     SaveTasksToJson();
@@ -441,7 +442,7 @@ namespace VibeAlarm
 
             Panel actionRow = CreateCard(new Point(0, 398), new Size(970, 56), 6, SecondaryBg, BorderColor);
             actionRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblCalendarProgress = CreateLabel("0 objectives resolved today", new Point(20, 18), new Size(400, 22), 11F, FontStyle.Bold, Color.White);
+            lblCalendarProgress = CreateLabel("0 tasks completed today", new Point(20, 18), new Size(400, 22), 11F, FontStyle.Bold, Color.White);
             actionRow.Controls.Add(lblCalendarProgress);
 
             calendarListPanel = new FlowLayoutPanel
@@ -490,8 +491,8 @@ namespace VibeAlarm
             bool isCurrentMonth = date.Month == displayedCalendarMonth.Month && date.Year == displayedCalendarMonth.Year;
             bool isSelected = date.Date == activeCalendarDate.Date;
             bool isToday = date.Date == DateTime.Today;
-            int scheduledCount = masterTaskList.Count(t => t.Day.Equals(date.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase));
-            int completedCount = masterTaskList.Count(t => t.Completed && t.Day.Equals(date.DayOfWeek.ToString(), StringComparison.OrdinalIgnoreCase));
+            int scheduledCount = masterTaskList.Count(t => GetTaskDate(t).Date == date.Date);
+            int completedCount = masterTaskList.Count(t => t.Completed && GetTaskDate(t).Date == date.Date);
 
             Button cell = new Button
             {
@@ -536,11 +537,11 @@ namespace VibeAlarm
 
             Panel metricsPanel = CreateCard(new Point(0, 4), new Size(940, 96), 8, SecondaryBg, BorderColor);
             metricsPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            Label lblFocusHeading = CreateLabel("Application Runtime Infrastructure", new Point(24, 18), new Size(400, 22), 12F, FontStyle.Bold, AccentColor);
-            Label lblFocusPara = CreateLabel("Background monitors stay running to coordinate custom alert queues. Active triggers execute recurring loops directly via local multimedia setups when conditions are met.", new Point(24, 46), new Size(890, 40), 10F, FontStyle.Regular, MutedTextColor);
+            Label lblFocusHeading = CreateLabel("Today at a Glance", new Point(24, 18), new Size(400, 22), 12F, FontStyle.Bold, AccentColor);
+            Label lblFocusPara = CreateLabel("Your reminders are running in the background. When a task reaches its scheduled date and time, VibeAlarm will let you know.", new Point(24, 46), new Size(890, 40), 10F, FontStyle.Regular, MutedTextColor);
             metricsPanel.Controls.AddRange(new Control[] { lblFocusHeading, lblFocusPara });
 
-            Label lblUpcomingTitle = CreateLabel("UPCOMING WORKSPACE SCHEDULE", new Point(2, 122), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
+            Label lblUpcomingTitle = CreateLabel("TODAY'S TASKS", new Point(2, 122), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
 
             dashboardFocusPanel = new FlowLayoutPanel
             {
@@ -560,9 +561,9 @@ namespace VibeAlarm
         {
             UpdateGreetingContext();
 
-            Label lblSection = CreateLabel("DATA ALLOCATION MANAGEMENT", new Point(2, 12), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
+            Label lblSection = CreateLabel("TASK DATA", new Point(2, 12), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
 
-            btnClearData = CreateGhostButton("Purge System Task Collection", new Point(0, 44), new Size(940, 46));
+            btnClearData = CreateGhostButton("Delete all tasks", new Point(0, 44), new Size(940, 46));
             btnClearData.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnClearData.ForeColor = Color.FromArgb(242, 92, 92);
             btnClearData.Click += (s, e) =>
@@ -589,7 +590,7 @@ namespace VibeAlarm
                 MessageBox.Show("All task completion statuses have been reset!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
-            Label lblThemeSection = CreateLabel("THEME CONFIGURATION", new Point(2, 170), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
+            Label lblThemeSection = CreateLabel("THEME", new Point(2, 170), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
 
             ComboBox cmbTheme = CreateCombo(new Point(0, 202), new Size(280, 32), themePresets.Select(t => t.Name).ToArray(), themePresets.IndexOf(currentTheme));
             cmbTheme.SelectedIndexChanged += (s, e) =>
@@ -603,10 +604,28 @@ namespace VibeAlarm
                 }
             };
 
-            Label lblSpecs = CreateLabel("App Release v1.5.0  •  Themeable Productivity Core", new Point(2, 570), new Size(500, 22), 9F, FontStyle.Regular, MutedTextColor);
+            Label lblBehaviorSection = CreateLabel("STARTUP", new Point(2, 260), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
+
+            bool startupEnabled = IsRunOnStartupEnabled();
+            Button btnStartup = CreateGhostButton(startupEnabled ? "Disable Launch on Windows Startup" : "Enable Launch on Windows Startup", new Point(0, 292), new Size(940, 46));
+            btnStartup.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            if (startupEnabled)
+            {
+                btnStartup.ForeColor = AccentColor;
+            }
+            btnStartup.Click += (s, e) =>
+            {
+                bool nowEnabled = IsRunOnStartupEnabled();
+                SetRunOnStartup(!nowEnabled);
+                btnStartup.Text = !nowEnabled ? "Disable Launch on Windows Startup" : "Enable Launch on Windows Startup";
+                btnStartup.ForeColor = !nowEnabled ? AccentColor : Color.White;
+                MessageBox.Show(!nowEnabled ? "Launch on startup enabled!" : "Launch on startup disabled!", "Startup Settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+
+            Label lblSpecs = CreateLabel("VibeAlarm v1.5.0", new Point(2, 570), new Size(500, 22), 9F, FontStyle.Regular, MutedTextColor);
             lblSpecs.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
 
-            contentPanel.Controls.AddRange(new Control[] { lblSection, btnClearData, btnResetCompletion, lblThemeSection, cmbTheme, lblSpecs });
+            contentPanel.Controls.AddRange(new Control[] { lblSection, btnClearData, btnResetCompletion, lblThemeSection, cmbTheme, lblBehaviorSection, btnStartup, lblSpecs });
         }
 
         private void RenderAmbientView()
@@ -682,7 +701,7 @@ namespace VibeAlarm
             card.Margin = new Padding(0, 0, 12, 0);
 
             Panel iconBox = new Panel { Location = new Point(20, 20), Size = new Size(52, 52), BackColor = Color.FromArgb(18 + iconColor.R / 6, 22 + iconColor.G / 6, 26 + iconColor.B / 6) };
-            Label icon = CreateLabel(header.StartsWith("Active") ? "▣" : "✓", new Point(0, 9), new Size(52, 30), 17F, FontStyle.Bold, iconColor);
+            Label icon = CreateLabel(header.StartsWith("Active") ? "[]" : "OK", new Point(0, 9), new Size(52, 30), 17F, FontStyle.Bold, iconColor);
             icon.TextAlign = ContentAlignment.MiddleCenter;
             iconBox.Controls.Add(icon);
             RoundControl(iconBox, 8);
@@ -697,14 +716,15 @@ namespace VibeAlarm
         private void RefreshDataCounters()
         {
             int pending = masterTaskList.Count(t => !t.Completed);
-            int resolvedToday = masterTaskList.Count(t => t.Completed && t.Day == DateTime.Now.DayOfWeek.ToString());
+            int pendingToday = masterTaskList.Count(t => !t.Completed && GetTaskDate(t).Date == DateTime.Today);
+            int resolvedToday = masterTaskList.Count(t => t.Completed && GetTaskDate(t).Date == DateTime.Today);
             int total = masterTaskList.Count;
             int completed = masterTaskList.Count(t => t.Completed);
             int completePercent = total == 0 ? 0 : (int)Math.Round(completed * 100d / total);
 
             if (lblStatActiveCount != null) lblStatActiveCount.Text = pending.ToString();
             if (lblStatDoneCount != null) lblStatDoneCount.Text = resolvedToday.ToString();
-            if (lblHeaderSubtitle != null) lblHeaderSubtitle.Text = $"You have {pending} tasks remaining today.";
+            if (lblHeaderSubtitle != null) lblHeaderSubtitle.Text = $"You have {pendingToday} tasks remaining today.";
             if (lblSidebarRemaining != null) lblSidebarRemaining.Text = $"{pending} Tasks Remaining";
             if (lblSidebarPercent != null) lblSidebarPercent.Text = $"{completePercent}%";
             if (sidebarProgressFill != null && sidebarProgressTrack != null)
@@ -716,6 +736,7 @@ namespace VibeAlarm
             if (taskListPanel != null && !taskListPanel.IsDisposed) BindTaskListView();
             if (calendarListPanel != null && !calendarListPanel.IsDisposed) BindCalendarView();
             if (dashboardFocusPanel != null && !dashboardFocusPanel.IsDisposed) BindDashboardFocusView();
+            SaveTasksToJson();
         }
 
         private IEnumerable<TaskItem> GetFilteredTasks(IEnumerable<TaskItem> SourceList)
@@ -735,6 +756,22 @@ namespace VibeAlarm
             return fromDate.Date.AddDays(daysUntilTarget);
         }
 
+        private static DateTime GetTaskDate(TaskItem task)
+        {
+            if (!string.IsNullOrWhiteSpace(task.ScheduledDate) &&
+                DateTime.TryParse(task.ScheduledDate, out DateTime parsedDate))
+            {
+                return parsedDate.Date;
+            }
+
+            return NextDateForDay(task.Day, DateTime.Today);
+        }
+
+        private static string GetTaskDateLabel(TaskItem task)
+        {
+            return GetTaskDate(task).ToString("ddd, MMM d, yyyy");
+        }
+
         private void BindTaskListView()
         {
             taskListPanel.Controls.Clear();
@@ -743,11 +780,11 @@ namespace VibeAlarm
 
             if (!filtered.Any())
             {
-                taskListPanel.Controls.Add(CreateEmptyStateRow("No matching parameters resolved.", "Refine search syntax parameters or add new tasks via header."));
+                taskListPanel.Controls.Add(CreateEmptyStateRow("No tasks found.", "Try a different search or add a new task."));
                 return;
             }
 
-            foreach (TaskItem task in filtered.OrderBy(t => Array.IndexOf(WeekDays, t.Day)).ThenBy(t => t.RemindTime))
+            foreach (TaskItem task in filtered.OrderBy(GetTaskDate).ThenBy(t => t.RemindTime))
             {
                 taskListPanel.Controls.Add(BuildTaskRowCard(task));
             }
@@ -757,12 +794,12 @@ namespace VibeAlarm
         {
             calendarListPanel.Controls.Clear();
             activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
-            var items = GetFilteredTasks(masterTaskList.Where(t => t.Day.Equals(activeCalendarDay, StringComparison.OrdinalIgnoreCase))).ToList();
-            lblCalendarProgress.Text = $"{activeCalendarDate:dddd, MMMM d, yyyy}  •  {items.Count(t => t.Completed)} of {items.Count} tasks completed";
+            var items = GetFilteredTasks(masterTaskList.Where(t => GetTaskDate(t).Date == activeCalendarDate.Date)).ToList();
+            lblCalendarProgress.Text = $"{activeCalendarDate:dddd, MMMM d, yyyy} - {items.Count(t => t.Completed)} of {items.Count} tasks completed";
 
             if (!items.Any())
             {
-                calendarListPanel.Controls.Add(CreateEmptyStateRow("No tasks scheduled.", $"Nothing is mapped to {activeCalendarDate:dddd, MMMM d}."));
+                calendarListPanel.Controls.Add(CreateEmptyStateRow("No tasks scheduled.", $"You do not have anything planned for {activeCalendarDate:dddd, MMMM d}."));
                 return;
             }
 
@@ -775,12 +812,11 @@ namespace VibeAlarm
         private void BindDashboardFocusView()
         {
             dashboardFocusPanel.Controls.Clear();
-            string todayStr = DateTime.Now.DayOfWeek.ToString();
-            var remainingItems = GetFilteredTasks(masterTaskList.Where(t => t.Day == todayStr && !t.Completed)).ToList();
+            var remainingItems = GetFilteredTasks(masterTaskList.Where(t => GetTaskDate(t).Date == DateTime.Today && !t.Completed)).ToList();
 
             if (!remainingItems.Any())
             {
-                dashboardFocusPanel.Controls.Add(CreateEmptyStateRow("Timeline caught up.", "All objectives for today have been sorted."));
+                dashboardFocusPanel.Controls.Add(CreateEmptyStateRow("You're all caught up.", "No tasks are scheduled for today."));
                 return;
             }
 
@@ -801,7 +837,7 @@ namespace VibeAlarm
 
             Button btnToggle = new Button
             {
-                Text = item.Completed ? "✓" : string.Empty,
+                Text = item.Completed ? "OK" : string.Empty,
                 Location = new Point(22, 24),
                 Size = new Size(38, 38),
                 FlatStyle = FlatStyle.Flat,
@@ -825,7 +861,7 @@ namespace VibeAlarm
             int textWidth = Math.Max(260, badgeLeft - 110);
 
             Label lblTitle = CreateLabel(item.Title, new Point(86, 20), new Size(textWidth, 24), 12F, FontStyle.Bold, item.Completed ? MutedTextColor : Color.White);
-            Label lblMeta = CreateLabel($"□  {item.Day}    •    ◷  {item.RemindTime}", new Point(86, 49), new Size(textWidth, 20), 9.5F, FontStyle.Regular, MutedTextColor);
+            Label lblMeta = CreateLabel($"Date: {GetTaskDateLabel(item)}    Time: {item.RemindTime}", new Point(86, 49), new Size(textWidth, 20), 9.5F, FontStyle.Regular, MutedTextColor);
 
             lblTitle.MouseEnter += (s, e) => { card.BackColor = CardHoverBg; card.Invalidate(); };
             lblMeta.MouseEnter += (s, e) => { card.BackColor = CardHoverBg; card.Invalidate(); };
@@ -839,7 +875,7 @@ namespace VibeAlarm
 
             Button btnOptions = new Button
             {
-                Text = "⋮",
+                Text = "...",
                 Location = new Point(optionsLeft, 24),
                 Size = new Size(36, 36),
                 FlatStyle = FlatStyle.Flat,
@@ -855,7 +891,7 @@ namespace VibeAlarm
                 ContextMenuStrip contextMenu = new ContextMenuStrip();
                 contextMenu.Items.Add("Complete Task", null, (src, ev) => { item.Completed = true; RefreshDataCounters(); });
                 contextMenu.Items.Add("Duplicate Entry", null, (src, ev) => {
-                    masterTaskList.Add(new TaskItem { Id = Guid.NewGuid().ToString(), Title = item.Title + " (Copy)", Day = item.Day, RemindTime = item.RemindTime, Type = item.Type, Completed = false });
+                    masterTaskList.Add(new TaskItem { Id = Guid.NewGuid().ToString(), Title = item.Title + " (Copy)", ScheduledDate = item.ScheduledDate, Day = item.Day, RemindTime = item.RemindTime, Type = item.Type, Completed = false });
                     RefreshDataCounters();
                 });
                 contextMenu.Items.Add("Delete Permanently", null, (src, ev) => { masterTaskList.Remove(item); RefreshDataCounters(); });
@@ -1042,13 +1078,13 @@ namespace VibeAlarm
             int hour = DateTime.Now.Hour;
             string structuralPrefix = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
-            lblGreeting.Text = $"{structuralPrefix}, Jeptah 👋";
+            lblGreeting.Text = $"{structuralPrefix}, Jeptah";
             lblHeaderSubtitle.Text = activeView switch
             {
-                "Dashboard" => "A quick look at what needs your attention.",
-                "Calendar" => "See this month, today, and every scheduled task by date.",
-                "Settings" => "Tune the app and manage your task data.",
-                _ => $"You have {masterTaskList.Count(t => !t.Completed)} tasks remaining today."
+                "Dashboard" => "Here is what is on your plate today.",
+                "Calendar" => "Pick a date to see what is scheduled.",
+                "Settings" => "Manage your tasks, theme, and startup options.",
+                _ => $"You have {masterTaskList.Count(t => !t.Completed && GetTaskDate(t).Date == DateTime.Today)} tasks remaining today."
             };
         }
 
@@ -1082,10 +1118,9 @@ namespace VibeAlarm
         private void OnClockEngineTick(object? sender, EventArgs e)
         {
             DateTime now = DateTime.Now;
-            string currentDay = now.DayOfWeek.ToString();
 
             var alerts = masterTaskList
-                .Where(t => IsTaskDueNow(t, currentDay, now))
+                .Where(t => IsTaskDueNow(t, now))
                 .ToList();
 
             foreach (TaskItem task in alerts)
@@ -1114,9 +1149,15 @@ namespace VibeAlarm
             }
         }
 
-        private bool IsTaskDueNow(TaskItem task, string currentDay, DateTime now)
+        private bool IsTaskDueNow(TaskItem task, DateTime now)
         {
-            if (task.Completed || !task.Day.Equals(currentDay, StringComparison.OrdinalIgnoreCase))
+            if (task.Completed)
+            {
+                return false;
+            }
+
+            DateTime taskDate = GetTaskDate(task);
+            if (taskDate.Date != now.Date)
             {
                 return false;
             }
@@ -1382,6 +1423,46 @@ namespace VibeAlarm
             }
         }
 
+        private bool IsRunOnStartupEnabled()
+        {
+            try
+            {
+                using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false))
+                {
+                    return key?.GetValue("VibeAlarm") != null;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void SetRunOnStartup(bool enable)
+        {
+            try
+            {
+                using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key != null)
+                    {
+                        if (enable)
+                        {
+                            key.SetValue("VibeAlarm", $"\"{Application.ExecutablePath}\"");
+                        }
+                        else
+                        {
+                            key.DeleteValue("VibeAlarm", false);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to set startup settings: {ex.Message}");
+            }
+        }
+
         private void EnsureDefaultAmbientSounds()
         {
             string assetsDir = Path.Combine(AppContext.BaseDirectory, "Assets");
@@ -1519,7 +1600,7 @@ namespace VibeAlarm
         public TaskItem GeneratedTask { get; private set; } = null!;
 
         private TextBox txtInput = null!;
-        private ComboBox cmbDay = null!;
+        private DateTimePicker dtpScheduleDate = null!;
         private ComboBox cmbType = null!;
         private ComboBox cmbHr = null!;
         private ComboBox cmbMin = null!;
@@ -1569,8 +1650,22 @@ namespace VibeAlarm
 
             // Day Config Picker
             Label lblSchedule = new Label { Text = "Schedule", Location = new Point(28, 174), Size = new Size(160, 18), Font = new Font("Segoe UI Semibold", 8.5F), ForeColor = Color.FromArgb(205, 207, 211), BackColor = Color.Transparent };
-            Label lblDay = new Label { Text = "Day", Location = new Point(28, 198), Size = new Size(80, 18), Font = new Font("Segoe UI", 8.5F), ForeColor = Color.FromArgb(170, 174, 180), BackColor = Color.Transparent };
-            cmbDay = CreateCombo(new Point(28, 220), new Size(154, 32), new[] { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" }, 1);
+            Label lblDate = new Label { Text = "Date", Location = new Point(28, 198), Size = new Size(80, 18), Font = new Font("Segoe UI", 8.5F), ForeColor = Color.FromArgb(170, 174, 180), BackColor = Color.Transparent };
+            dtpScheduleDate = new DateTimePicker
+            {
+                Location = new Point(28, 220),
+                Size = new Size(154, 32),
+                Format = DateTimePickerFormat.Custom,
+                CustomFormat = "MMM dd, yyyy",
+                Value = DateTime.Today,
+                MinDate = DateTime.Today.AddYears(-1),
+                MaxDate = DateTime.Today.AddYears(5),
+                CalendarForeColor = Color.White,
+                CalendarMonthBackground = Color.FromArgb(18, 21, 25),
+                CalendarTitleBackColor = Color.FromArgb(30, 215, 96),
+                CalendarTitleForeColor = Color.Black,
+                Font = new Font("Segoe UI", 9.5F)
+            };
 
             Label lblHour = new Label { Text = "Hour", Location = new Point(206, 198), Size = new Size(60, 18), Font = new Font("Segoe UI", 8.5F), ForeColor = Color.FromArgb(170, 174, 180), BackColor = Color.Transparent };
             cmbHr = CreateCombo(new Point(206, 220), new Size(70, 32), Enumerable.Range(1, 12).Select(h => h.ToString("D2")).ToArray(), 7);
@@ -1593,7 +1688,7 @@ namespace VibeAlarm
             btnCancel.FlatAppearance.BorderColor = Color.FromArgb(45, 45, 45);
             btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
 
-            Controls.AddRange(new Control[] { lblHead, lblSub, lblTask, txtInput, lblSchedule, lblDay, cmbDay, lblHour, cmbHr, lblMinute, cmbMin, lblAmPm, cmbAmPm, lblType, cmbType, btnSave, btnCancel });
+            Controls.AddRange(new Control[] { lblHead, lblSub, lblTask, txtInput, lblSchedule, lblDate, dtpScheduleDate, lblHour, cmbHr, lblMinute, cmbMin, lblAmPm, cmbAmPm, lblType, cmbType, btnSave, btnCancel });
         }
 
         private ComboBox CreateCombo(Point p, Size s, string[] items, int idx)
@@ -1646,7 +1741,8 @@ namespace VibeAlarm
             {
                 Id = Guid.NewGuid().ToString(),
                 Title = txtInput.Text.Trim(),
-                Day = cmbDay.SelectedItem?.ToString() ?? "Monday",
+                ScheduledDate = dtpScheduleDate.Value.Date.ToString("yyyy-MM-dd"),
+                Day = dtpScheduleDate.Value.DayOfWeek.ToString(),
                 Type = cmbType.SelectedItem?.ToString() ?? "Notification",
                 RemindTime = $"{cmbHr.SelectedItem ?? "08"}:{cmbMin.SelectedItem ?? "00"} {cmbAmPm.SelectedItem ?? "PM"}",
                 Completed = false
@@ -1657,3 +1753,4 @@ namespace VibeAlarm
         }
     }
 }
+
