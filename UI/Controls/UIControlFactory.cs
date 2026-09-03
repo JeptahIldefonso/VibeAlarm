@@ -1,0 +1,313 @@
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+using Guna.UI2.WinForms;
+using VibeAlarm.Models;
+using VibeAlarm.Services;
+using VibeAlarm.UI.Theming;
+
+namespace VibeAlarm.UI.Controls
+{
+    /// <summary>
+    /// The ONLY place forms go to create Guna control primitives. Guna supplies rendering;
+    /// VibeAlarm's design system (an active <see cref="ThemePreset"/> + <see cref="DesignTokens"/>)
+    /// supplies every visual decision. No form configures a Guna control's colors/spacing/radius
+    /// directly — it calls this factory so all 5 presets stay consistent by construction.
+    ///
+    /// Sequence per factory method: create the Guna control → pull colors from the active preset
+    /// → pull spacing/radius/typography from DesignTokens → apply consistent hover/pressed/disabled
+    /// states → return. Business logic never lives here.
+    /// </summary>
+    public static class UIControlFactory
+    {
+        private static ThemePreset Active() => ThemeService.Shared.Current ?? ThemeService.Shared.Default;
+
+        /// <summary>Primary action (e.g. "+ New Task", "Create Task"). Flat, high-contrast, no gradient/shadow.</summary>
+        public static Guna2Button CreatePrimaryButton(
+            string text,
+            ThemePreset? preset = null,
+            bool enabled = true)
+        {
+            var p = preset ?? Active();
+            Guna2Button btn = new Guna2Button
+            {
+                Text = text,
+                Font = DesignTokens.Typography.Mono(DesignTokens.Typography.ButtonSize, FontStyle.Bold),
+                FillColor = p.TextColor,
+                ForeColor = p.IsLight ? p.SurfaceElevated : DarkInk(p),
+                BorderThickness = 0,
+                BorderColor = p.TextColor,
+                BorderRadius = DesignTokens.Radius.Small,
+                Animated = false,
+                Cursor = Cursors.Hand,
+                Enabled = enabled
+            };
+            btn.HoverState.FillColor = p.KeyStateLift(p.TextColor, lift: true);
+            btn.HoverState.ForeColor = btn.ForeColor;
+            btn.PressedColor = p.KeyStatePress(p.TextColor);
+            ApplyDisabled(btn.DisabledState, p);
+            return btn;
+        }
+
+        /// <summary>Secondary action (e.g. "Cancel", "Today", "Filter"). Surface/transparent fill, visible border, subtle hover.</summary>
+        public static Guna2Button CreateSecondaryButton(
+            string text,
+            ThemePreset? preset = null,
+            bool enabled = true)
+        {
+            var p = preset ?? Active();
+            Guna2Button btn = new Guna2Button
+            {
+                Text = text,
+                Font = DesignTokens.Typography.Mono(DesignTokens.Typography.ButtonSize),
+                FillColor = p.CardBgColor,
+                ForeColor = p.TextColor,
+                BorderThickness = 1,
+                BorderColor = p.BorderColor,
+                BorderRadius = DesignTokens.Radius.Small,
+                Animated = false,
+                Cursor = Cursors.Hand,
+                Enabled = enabled
+            };
+            btn.HoverState.FillColor = p.CardHoverBg;
+            btn.HoverState.BorderColor = p.TextColor;
+            btn.HoverState.ForeColor = p.TextColor;
+            btn.PressedColor = p.KeyStatePress(p.CardHoverBg);
+            ApplyDisabled(btn.DisabledState, p);
+            return btn;
+        }
+
+        /// <summary>Destructive action (e.g. "Delete all tasks"). Only this variant uses the preset's ErrorColor.</summary>
+        public static Guna2Button CreateDangerButton(
+            string text,
+            ThemePreset? preset = null,
+            bool enabled = true)
+        {
+            var p = preset ?? Active();
+            Guna2Button btn = CreateSecondaryButton(text, p, enabled);
+            btn.ForeColor = p.ErrorColor;
+            btn.BorderColor = Mix(p.ErrorColor, p.BorderColor);
+            btn.HoverState.FillColor = SoftTint(p.ErrorColor, p, 0.12f);
+            btn.HoverState.BorderColor = p.ErrorColor;
+            btn.HoverState.ForeColor = p.ErrorColor;
+            btn.PressedColor = SoftTint(p.ErrorColor, p, 0.25f);
+            return btn;
+        }
+
+        /// <summary>Text field. Normal: surface fill + subtle border. Focus: stronger monochrome border (never Guna's blue).</summary>
+        public static Guna2TextBox CreateTextBox(
+            string placeholder = "",
+            string text = "",
+            ThemePreset? preset = null,
+            bool multiline = false)
+        {
+            var p = preset ?? Active();
+            Guna2TextBox box = new Guna2TextBox
+            {
+                Text = text,
+                PlaceholderText = placeholder,
+                ForeColor = p.TextColor,
+                FillColor = p.CardBgColor,
+                PlaceholderForeColor = p.MutedTextColor,
+                BorderColor = p.BorderColor,
+                BorderThickness = 1,
+                BorderRadius = DesignTokens.Radius.Small,
+                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize),
+                Multiline = multiline,
+                Cursor = Cursors.IBeam
+            };
+            box.FocusedState.BorderColor = p.TextColor;
+            box.HoverState.BorderColor = Mix(p.TextColor, p.BorderColor);
+            box.DisabledState.FillColor = p.KeyStateDisabled();
+            box.DisabledState.ForeColor = p.IsLight ? Shade(p.MutedTextColor, 0.6f) : p.MutedTextColor;
+            box.DisabledState.BorderColor = p.BorderColor;
+            return box;
+        }
+
+        /// <summary>Dropdown. Dark/monochrome, readable popup, visible selected/hover states.</summary>
+        public static Guna2ComboBox CreateDropdown(
+            string[] items,
+            int selectedIndex = -1,
+            ThemePreset? preset = null,
+            bool enabled = true)
+        {
+            var p = preset ?? Active();
+            Guna2ComboBox combo = new Guna2ComboBox
+            {
+                FillColor = p.CardBgColor,
+                ForeColor = p.TextColor,
+                BorderColor = p.BorderColor,
+                BorderThickness = 1,
+                BorderRadius = DesignTokens.Radius.Small,
+                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                StartIndex = selectedIndex,
+                Cursor = Cursors.Hand,
+                Enabled = enabled
+            };
+            combo.FocusedState.BorderColor = p.TextColor;
+            combo.HoverState.BorderColor = Mix(p.TextColor, p.BorderColor);
+            combo.ItemsAppearance.BackColor = p.SurfaceElevated;
+            combo.ItemsAppearance.ForeColor = p.TextColor;
+            combo.ItemsAppearance.SelectedBackColor = p.SelectedColor;
+            combo.ItemsAppearance.SelectedForeColor = p.SelectedTextColor;
+            foreach (string it in items)
+            {
+                combo.Items.Add(it);
+            }
+            return combo;
+        }
+
+        /// <summary>On/off toggle. No default bright green: off = muted thumb on surface, on = light/selected monochrome thumb.</summary>
+        public static Guna2ToggleSwitch CreateToggle(
+            bool isChecked = false,
+            ThemePreset? preset = null)
+        {
+            var p = preset ?? Active();
+            Guna2ToggleSwitch toggle = new Guna2ToggleSwitch
+            {
+                Checked = isChecked,
+                UseTransparentBackground = true
+            };
+            toggle.UncheckedState.FillColor = p.CardHoverBg;
+            toggle.UncheckedState.InnerColor = p.MutedTextColor;
+            toggle.UncheckedState.BorderThickness = 1;
+            toggle.UncheckedState.BorderColor = p.BorderColor;
+            toggle.CheckedState.FillColor = p.SelectedColor;
+            toggle.CheckedState.InnerColor = p.SelectedTextColor;
+            toggle.CheckedState.BorderThickness = 1;
+            toggle.CheckedState.BorderColor = p.SelectedColor;
+            return toggle;
+        }
+
+        /// <summary>Continuous-value slider (volume). Track = muted, thumb/active = monochrome text color.</summary>
+        public static Guna2TrackBar CreateSlider(
+            int minimum = 0,
+            int maximum = 100,
+            int value = 70,
+            ThemePreset? preset = null)
+        {
+            var p = preset ?? Active();
+            Guna2TrackBar slider = new Guna2TrackBar
+            {
+                Minimum = minimum,
+                Maximum = maximum,
+                Value = value,
+                FillColor = p.BorderColor,
+                ThumbColor = p.TextColor,
+                Cursor = Cursors.Hand
+            };
+            slider.HoverState.FillColor = p.MutedTextColor;
+            slider.HoverState.ThumbColor = p.TextColor;
+            return slider;
+        }
+
+        /// <summary>Rounded surface container. Shadow off; used only where rendering earns a Guna panel over a plain Panel.</summary>
+        public static Guna2Panel CreatePanel(
+            Color? fill = null,
+            bool border = false,
+            int radius = DesignTokens.Radius.Small,
+            ThemePreset? preset = null)
+        {
+            var p = preset ?? Active();
+            Guna2Panel panel = new Guna2Panel
+            {
+                FillColor = fill ?? p.CardBgColor,
+                BorderRadius = radius
+            };
+            panel.ShadowDecoration.Enabled = false; // no guna default drop shadows
+            if (border)
+            {
+                panel.BorderColor = p.BorderColor;
+                panel.BorderThickness = 1;
+            }
+            return panel;
+        }
+
+        /// <summary>Small icon/text action (sidebar nav, hover-reveal row icon). Borderless, non-focus-enclosing.</summary>
+        public static Guna2Button CreateIconButton(
+            string glyph,
+            ThemePreset? preset = null)
+        {
+            var p = preset ?? Active();
+            Guna2Button btn = new Guna2Button
+            {
+                Text = glyph,
+                Font = DesignTokens.Typography.Mono(DesignTokens.Typography.NumericSize, FontStyle.Bold),
+                FillColor = Color.Transparent,
+                ForeColor = p.MutedTextColor,
+                BorderThickness = 0,
+                BorderRadius = DesignTokens.Radius.Small,
+                Animated = false,
+                Cursor = Cursors.Hand
+            };
+            btn.HoverState.FillColor = p.CardHoverBg;
+            btn.HoverState.ForeColor = p.TextColor;
+            btn.PressedColor = p.KeyStatePress(p.CardHoverBg);
+            return btn;
+        }
+
+        /// <summary>Applies theme-consistent disabled visual state to buttons.</summary>
+        private static void ApplyDisabled(Guna.UI2.WinForms.Suite.ButtonState disabled, ThemePreset p)
+        {
+            disabled.FillColor = p.KeyStateDisabled();
+            disabled.ForeColor = p.IsLight ? Shade(p.MutedTextColor, 0.6f) : p.MutedTextColor;
+            disabled.BorderColor = p.BorderColor;
+        }
+
+        // ---- monochrome blend/lift/shift helpers ----
+
+        private static Color DarkInk(ThemePreset p) => p.IsLight ? p.SelectedTextColor : p.SelectedTextColor;
+
+        private static Color Mix(Color a, Color b) =>
+            Color.FromArgb((a.R + b.R) / 2, (a.G + b.G) / 2, (a.B + b.B) / 2);
+
+        private static Color SoftTint(Color source, ThemePreset p, float amount)
+        {
+            Color baseColor = p.CardBgColor;
+            int r = (int)(source.R * amount + baseColor.R * (1 - amount));
+            int g = (int)(source.G * amount + baseColor.G * (1 - amount));
+            int b = (int)(source.B * amount + baseColor.B * (1 - amount));
+            return Color.FromArgb(Clamp255(r), Clamp255(g), Clamp255(b));
+        }
+
+        private static Color Shade(Color color, float factor)
+        {
+            int r = Clamp255((int)(color.R * factor));
+            int g = Clamp255((int)(color.G * factor));
+            int b = Clamp255((int)(color.B * factor));
+            return Color.FromArgb(r, g, b);
+        }
+
+        private static int Clamp255(int v) => Math.Max(0, Math.Min(255, v));
+
+        private static Color KeyStateLift(this ThemePreset p, Color baseColor, bool lift)
+        {
+            if (p.IsLight)
+            {
+                // light theme: hover = slightly darker than the base fill
+                return Shade(baseColor, 0.9f);
+            }
+            // dark theme: "lift" toward white = lighter
+            return Color.FromArgb(
+                Clamp255(baseColor.R + 30),
+                Clamp255(baseColor.G + 30),
+                Clamp255(baseColor.B + 30));
+        }
+
+        private static Color KeyStatePress(this ThemePreset p, Color baseColor)
+        {
+            if (p.IsLight)
+            {
+                return Shade(baseColor, 0.76f);
+            }
+            return Color.FromArgb(
+                Clamp255(baseColor.R - 24),
+                Clamp255(baseColor.G - 24),
+                Clamp255(baseColor.B - 24));
+        }
+
+        private static Color KeyStateDisabled(this ThemePreset p)
+            => p.IsLight ? Color.FromArgb(226, 225, 221) : Color.FromArgb(46, 46, 44);
+    }
+}

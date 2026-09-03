@@ -1,8 +1,7 @@
 {
   "profiles": {
     "VibeAlarm": {
-      "commandName": "Project",
-      "workingDirectory": "C:\\Users\\ildef\\Documents\\Coding\\Visual Studio 2026"
+      "commandName": "Project"
     }
   }
 }

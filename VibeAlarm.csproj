@@ -10,9 +10,33 @@
   </PropertyGroup>
 
   <ItemGroup>
-<None Update="Assets\**\*.*">
+    <None Update="Assets\**\*.*">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <!-- Typefaces are embedded (not just copied) so FontRegistry can register them with GDI+ via
+       PrivateFontCollection.AddMemoryFont at startup: Windows ships neither Inter nor JetBrains
+       Mono, and a single-file publish has no reliable on-disk Assets path to read from. Both
+       faces are SIL Open Font License 1.1, which permits bundling and redistribution; the
+       license files ship beside them. Excluded from the None glob above to avoid double-include. -->
+  <ItemGroup>
+    <None Remove="Assets\Fonts\*.ttf" />
+    <EmbeddedResource Include="Assets\Fonts\*.ttf" />
+  </ItemGroup>
+
+  <!-- The installer build script stages a generated installer project under
+       build_staging\ (and dotnet publish output under publish\), and the xUnit test
+       project lives under tests\. These directories sit inside this project's tree, so
+       exclude them from the default .cs glob; otherwise the SDK sweeps up the installer's
+       source/generated obj files (CS0579/CS7022) and the test sources break the WinExe. -->
+  <ItemGroup>
+    <Compile Remove="build_staging\**" />
+    <Compile Remove="publish\**" />
+    <Compile Remove="tests\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Guna.UI2.WinForms" Version="2.0.4.8" />
   </ItemGroup>
 
 </Project>

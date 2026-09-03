@@ -1,6 +1,7 @@
 .vs/
 bin/
 obj/
+publish/
 *.user
 *.suo
 *.userosscache
@@ -11,3 +12,7 @@ build_staging/
 VibeAlarmInstaller.exe
 VibeAlarmInstaller.zip
 ~VibeAlarmInstaller.DDF
+
+# Runtime-generated app data
+tasks.json
+settings.json

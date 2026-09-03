@@ -1,3 +1,4 @@
 <Solution>
 <Project Path="VibeAlarm.csproj" />
+<Project Path="tests\VibeAlarm.Tests\VibeAlarm.Tests.csproj" />
 </Solution>
