@@ -11,7 +11,7 @@ namespace VibeAlarm.Services
     /// Owns the built-in theme preset catalog and resolves the active preset.
     /// Applying a theme to the UI remains a concern of the view layer.
     /// </summary>
-    public sealed class ThemeService
+    public sealed partial class ThemeService
     {
         private readonly List<ThemePreset> presets = new();
 

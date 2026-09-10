@@ -46,7 +46,7 @@ namespace VibeAlarm.UI.Forms
         private void InitializeDialogCanvas()
         {
             Text = "Create Task";
-            ClientSize = new Size(560, 360);
+            ClientSize = new Size(560, 400);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -54,20 +54,72 @@ namespace VibeAlarm.UI.Forms
             BackColor = VibeAlarmPalette.Background;
             Font = VibeAlarmPalette.Body(10F);
 
-            Label lblHead = new Label { Text = "Create Task", Location = new Point(28, 24), Size = new Size(220, 28), Font = VibeAlarmPalette.Display(16F, FontStyle.Bold), ForeColor = VibeAlarmPalette.TextPrimary, BackColor = Color.Transparent };
-            Label lblSub = new Label { Text = "Add a reminder, alarm, or important task.", Location = new Point(28, 54), Size = new Size(360, 20), Font = VibeAlarmPalette.Body(9F), ForeColor = VibeAlarmPalette.TextSecondary, BackColor = Color.Transparent };
+            // §34: layout containers, not coordinates — header, full-width name field, a
+            // schedule flow (date | hour | minute | AM/PM), type, right-aligned actions.
+            TableLayoutPanel root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 8,
+                BackColor = Color.Transparent,
+                Padding = new Padding(28, 20, 28, 20)
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // header
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // name label
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // name field
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // schedule label
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // schedule flow
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // type label
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // type row
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // actions
 
-            Label lblTask = new Label { Text = "Task Name", Location = new Point(28, 94), Size = new Size(160, 18), Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold), ForeColor = VibeAlarmPalette.TextPrimary, BackColor = Color.Transparent };
+            // ---- Header ----
+            TableLayoutPanel header = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, DesignTokens.Spacing.Lg)
+            };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            header.Controls.Add(new Label
+            {
+                Text = "Create Task",
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                Font = VibeAlarmPalette.Display(16F, FontStyle.Bold),
+                ForeColor = VibeAlarmPalette.TextPrimary,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            }, 0, 0);
+            header.Controls.Add(new Label
+            {
+                Text = "Add a reminder, alarm, or important task.",
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                Font = VibeAlarmPalette.Body(9F),
+                ForeColor = VibeAlarmPalette.TextSecondary,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 3, 0, 0)
+            }, 0, 1);
+            root.Controls.Add(header, 0, 0);
+
+            // ---- Task name ----
+            root.Controls.Add(CreateFieldLabel("TASK NAME"), 0, 1);
             txtInput = UIControlFactory.CreateTextBox(placeholder: PlaceholderTaskName);
-            txtInput.Location = new Point(28, 118);
-            txtInput.Size = new Size(504, 42);
+            txtInput.Dock = DockStyle.Fill;
+            txtInput.Margin = new Padding(0, 4, 0, DesignTokens.Spacing.Lg);
+            root.Controls.Add(txtInput, 0, 2);
 
-            Label lblSchedule = new Label { Text = "Schedule", Location = new Point(28, 174), Size = new Size(160, 18), Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold), ForeColor = VibeAlarmPalette.TextPrimary, BackColor = Color.Transparent };
-            Label lblDate = new Label { Text = "Date", Location = new Point(28, 198), Size = new Size(80, 18), Font = VibeAlarmPalette.Mono(8F), ForeColor = VibeAlarmPalette.TextSecondary, BackColor = Color.Transparent };
+            // ---- Schedule: date | hour | minute | AM/PM ----
+            root.Controls.Add(CreateFieldLabel("SCHEDULE"), 0, 3);
+
             dtpScheduleDate = new DateTimePicker
             {
-                Location = new Point(28, 220),
-                Size = new Size(154, 32),
                 Format = DateTimePickerFormat.Custom,
                 CustomFormat = "MMM dd, yyyy",
                 Value = DateTime.Today,
@@ -78,48 +130,109 @@ namespace VibeAlarm.UI.Forms
                 CalendarMonthBackground = VibeAlarmPalette.Surface,
                 CalendarTitleBackColor = VibeAlarmPalette.TextPrimary,
                 CalendarTitleForeColor = VibeAlarmPalette.Surface,
-                Font = VibeAlarmPalette.Body(9.5F)
+                Font = VibeAlarmPalette.Body(9.5F),
+                Width = 154,
+                Margin = new Padding(0, 0, DesignTokens.Spacing.Md, 0)
             };
 
-            Label lblHour = new Label { Text = "Hour", Location = new Point(206, 198), Size = new Size(60, 18), Font = VibeAlarmPalette.Mono(8F), ForeColor = VibeAlarmPalette.TextSecondary, BackColor = Color.Transparent };
             cmbHr = CreateDropdown(Enumerable.Range(1, 12).Select(h => h.ToString("D2")).ToArray(), 7);
-            cmbHr.Location = new Point(206, 220);
-            cmbHr.Size = new Size(70, 40);
-            Label lblMinute = new Label { Text = "Minute", Location = new Point(292, 198), Size = new Size(70, 18), Font = VibeAlarmPalette.Mono(8F), ForeColor = VibeAlarmPalette.TextSecondary, BackColor = Color.Transparent };
+            cmbHr.Width = 70;
+            cmbHr.Margin = new Padding(0, 0, 6, 0);
             cmbMin = CreateDropdown(Enumerable.Range(0, 60).Select(m => m.ToString("D2")).ToArray(), 0);
-            cmbMin.Location = new Point(292, 220);
-            cmbMin.Size = new Size(78, 40);
-            Label lblAmPm = new Label { Text = "AM/PM", Location = new Point(386, 198), Size = new Size(80, 18), Font = VibeAlarmPalette.Mono(8F), ForeColor = VibeAlarmPalette.TextSecondary, BackColor = Color.Transparent };
+            cmbMin.Width = 78;
+            cmbMin.Margin = new Padding(0, 0, 6, 0);
             cmbAmPm = CreateDropdown(new[] { "AM", "PM" }, 0);
-            cmbAmPm.Location = new Point(386, 220);
-            cmbAmPm.Size = new Size(78, 40);
+            cmbAmPm.Width = 78;
+            cmbAmPm.Margin = new Padding(0);
 
-            Label lblType = new Label { Text = "Type", Location = new Point(28, 272), Size = new Size(130, 18), Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold), ForeColor = VibeAlarmPalette.TextPrimary, BackColor = Color.Transparent };
+            FlowLayoutPanel scheduleFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 4, 0, DesignTokens.Spacing.Lg)
+            };
+            scheduleFlow.Controls.Add(dtpScheduleDate);
+            scheduleFlow.Controls.Add(cmbHr);
+            scheduleFlow.Controls.Add(cmbMin);
+            scheduleFlow.Controls.Add(cmbAmPm);
+            root.Controls.Add(scheduleFlow, 0, 4);
+
+            // ---- Type + inline validation message ----
+            root.Controls.Add(CreateFieldLabel("TYPE"), 0, 5);
+
             cmbType = CreateDropdown(new[] { "Notification", "Alarm", "Important" }, 0);
-            cmbType.Location = new Point(28, 294);
-            cmbType.Size = new Size(210, 42);
+            cmbType.Width = 210;
+            cmbType.Margin = new Padding(0, 4, DesignTokens.Spacing.Md, 0);
 
             // Inline, monochrome validation feedback (no animation, no colorful material UI).
             lblValidation = new Label
             {
                 Text = string.Empty,
-                Location = new Point(254, 294),
-                Size = new Size(200, 42),
+                AutoSize = true,
+                MaximumSize = new Size(260, 0),
                 Font = VibeAlarmPalette.Mono(8F),
                 ForeColor = VibeAlarmPalette.Error,
                 BackColor = Color.Transparent,
-                Visible = false
+                Visible = false,
+                Margin = new Padding(0, 12, 0, 0)
             };
 
-            btnSave = UIControlFactory.CreatePrimaryButton("Create Task");
-            btnSave.Location = new Point(392, 294);
-            btnSave.Size = new Size(140, 40);
-            btnSave.Click += OnSaveSubmitted;
+            FlowLayoutPanel typeRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, 0)
+            };
+            typeRow.Controls.Add(cmbType);
+            typeRow.Controls.Add(lblValidation);
+            root.Controls.Add(typeRow, 0, 6);
+
+            // ---- Actions: right-aligned (Cancel ghost, Create Task primary) ----
+            TableLayoutPanel actionsRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+            actionsRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            actionsRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            FlowLayoutPanel actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 4, 0, 0)
+            };
 
             btnCancel = UIControlFactory.CreateSecondaryButton("Cancel");
-            btnCancel.Location = new Point(254, 294);
-            btnCancel.Size = new Size(118, 40);
+            btnCancel.Size = new Size(110, 38);
+            btnCancel.Margin = new Padding(0, 4, DesignTokens.Spacing.Sm, 0);
             btnCancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+
+            btnSave = UIControlFactory.CreatePrimaryButton("Create Task");
+            btnSave.Size = new Size(140, 38);
+            btnSave.Margin = new Padding(0, 4, 0, 0);
+            btnSave.Click += OnSaveSubmitted;
+
+            actions.Controls.Add(btnCancel);
+            actions.Controls.Add(btnSave);
+            actionsRow.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent }, 0, 0);
+            actionsRow.Controls.Add(actions, 1, 0);
+            root.Controls.Add(actionsRow, 0, 7);
 
             // Keyboard accessibility: Escape cancels, Enter submits (unless focus is on Cancel).
             KeyPreview = true;
@@ -135,8 +248,20 @@ namespace VibeAlarm.UI.Forms
             AcceptButton = btnSave;
             CancelButton = btnCancel;
 
-            Controls.AddRange(new Control[] { lblHead, lblSub, lblTask, txtInput, lblSchedule, lblDate, dtpScheduleDate, lblHour, cmbHr, lblMinute, cmbMin, lblAmPm, cmbAmPm, lblType, cmbType, lblValidation, btnSave, btnCancel });
+            Controls.Add(root);
         }
+
+        /// <summary>Small uppercase field caption (task name / schedule / type).</summary>
+        private static Label CreateFieldLabel(string text) => new()
+        {
+            Text = text,
+            Dock = DockStyle.Fill,
+            AutoEllipsis = true,
+            Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold),
+            ForeColor = VibeAlarmPalette.TextPrimary,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
+        };
 
         private Guna2ComboBox CreateDropdown(string[] items, int idx)
             => UIControlFactory.CreateDropdown(items, selectedIndex: idx);

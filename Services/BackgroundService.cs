@@ -74,8 +74,9 @@ namespace VibeAlarm.Services
         }
 
         /// <summary>
-        /// Loads the stored background, optionally darkened and desaturated so foreground text
-        /// stays legible and the design stays monochrome. Returns null when no image is present.
+        /// Loads the stored background, optionally desaturated, with the user's opacity applied
+        /// (0 = fully transparent image, 1 = fully visible), so foreground text stays legible.
+        /// Returns null when no image is present.
         /// </summary>
         public static Bitmap? LoadBackground(bool applyMonochromeFilter, double opacity)
         {
@@ -87,36 +88,39 @@ namespace VibeAlarm.Services
                     return null;
                 }
 
+                // One combined color matrix: optional desaturation + scrim, then the user's
+                // opacity as a global alpha (row 4). At opacity 1 the output is identical to
+                // the previous fixed-full-opacity render.
+                float a = (float)Math.Clamp(opacity, 0.0, 1.0);
+                float[][] matrix = applyMonochromeFilter
+                    ? new float[][]
+                    {
+                        new float[] {0.299f*a,0.299f*a,0.299f*a,0,0},
+                        new float[] {0.587f*a,0.587f*a,0.587f*a,0,0},
+                        new float[] {0.114f*a,0.114f*a,0.114f*a,0,0},
+                        new float[] {0,0,0,a,0},
+                        new float[] {0.18f*a,-0.02f*a,-0.08f*a,0,1}
+                    }
+                    : new float[][]
+                    {
+                        new float[] {a,0,0,0,0},
+                        new float[] {0,a,0,0,0},
+                        new float[] {0,0,a,0,0},
+                        new float[] {0,0,0,a,0},
+                        new float[] {0,0,0,0,1}
+                    };
+
                 using var original = new Bitmap(path);
                 var result = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
-                using (var g = Graphics.FromImage(result))
+                using (var attr = new ImageAttributes())
                 {
+                    attr.SetColorMatrix(new ColorMatrix(matrix));
+                    using var g = Graphics.FromImage(result);
+                    g.Clear(Color.Transparent);
                     g.SmoothingMode = SmoothingMode.HighQuality;
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(original, 0, 0, original.Width, original.Height);
-                }
-
-                if (applyMonochromeFilter)
-                {
-                    // Desaturate, then darken with a scrim so text remains legible behind it.
-                    ColorMatrix m = new(new float[][]
-                    {
-                        new float[] {0.299f,0.299f,0.299f,0,0},
-                        new float[] {0.587f,0.587f,0.587f,0,0},
-                        new float[] {0.114f,0.114f,0.114f,0,0},
-                        new float[] {0,0,0,1,0},
-                        new float[] {0.18f,-0.02f,-0.08f,0,1}
-                    });
-                    using var attr = new ImageAttributes();
-                    attr.SetColorMatrix(m);
-                    using var dark = new Bitmap(result.Width, result.Height, PixelFormat.Format32bppArgb);
-                    using (var dg = Graphics.FromImage(dark))
-                    {
-                        dg.DrawImage(result, new Rectangle(0, 0, result.Width, result.Height),
-                            0, 0, result.Width, result.Height, GraphicsUnit.Pixel, attr);
-                    }
-                    result.Dispose();
-                    return dark;
+                    g.DrawImage(original, new Rectangle(0, 0, result.Width, result.Height),
+                        0, 0, result.Width, result.Height, GraphicsUnit.Pixel, attr);
                 }
 
                 return result;

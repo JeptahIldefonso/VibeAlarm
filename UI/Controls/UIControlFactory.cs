@@ -18,7 +18,7 @@ namespace VibeAlarm.UI.Controls
     /// → pull spacing/radius/typography from DesignTokens → apply consistent hover/pressed/disabled
     /// states → return. Business logic never lives here.
     /// </summary>
-    public static class UIControlFactory
+    public static partial class UIControlFactory
     {
         private static ThemePreset Active() => ThemeService.Shared.Current ?? ThemeService.Shared.Default;
 

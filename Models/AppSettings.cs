@@ -4,10 +4,12 @@ namespace VibeAlarm.Models
     /// Strongly-typed, versioned application settings persisted to settings.json.
     /// SchemaVersion allows safe forward migration as fields are added over time.
     /// </summary>
-    public sealed class AppSettings
+    public sealed partial class AppSettings
     {
-        /// <summary>Bumped when the settings schema changes incompatibly.</summary>
-        public int SchemaVersion { get; set; } = 1;
+        /// <summary>Bumped when the settings schema changes incompatibly. v2 added the
+        /// appearance fields (transparency, radius, density, toggles) — additive, so v1 files
+        /// load unchanged and take the new defaults.</summary>
+        public int SchemaVersion { get; set; } = 2;
 
         /// <summary>The active theme name (see <see cref="VibeAlarm.Services.ThemeService.Presets"/>).</summary>
         public string Theme { get; set; } = string.Empty;
