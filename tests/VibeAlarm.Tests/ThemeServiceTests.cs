@@ -25,22 +25,23 @@ namespace VibeAlarm.Tests
         {
             var light = ThemeService.Shared.FindByName("Light")!;
             Assert.True(light.IsLight);
-            Assert.Equal(Color(0xE5, 0xE5, 0xE5), light.PrimaryBg);
-            Assert.Equal(Color(0xE5, 0xE5, 0xE5), light.CardBgColor);
-            Assert.Equal(Color(0xDA, 0xDA, 0xDA), light.CardHoverBg);
-            Assert.Equal(Color(0x17, 0x17, 0x17), light.TextColor);
-            Assert.Equal(Color(0x73, 0x73, 0x73), light.MutedTextColor);
-            Assert.Equal(Color(0xA3, 0xA3, 0xA3), light.BorderColor);
-            Assert.Equal(Color(0x00, 0x00, 0x00), light.AccentColor);
+            Assert.Equal(Color(0xFF, 0xFF, 0xFF), light.PrimaryBg);
+            Assert.Equal(Color(0xF7, 0xF7, 0xF5), light.CardBgColor);
+            Assert.Equal(Color(0xEF, 0xEF, 0xED), light.CardHoverBg);
+            Assert.Equal(Color(0x37, 0x35, 0x2F), light.TextColor);
+            Assert.Equal(Color(0x78, 0x77, 0x74), light.MutedTextColor);
+            Assert.Equal(Color(0xE9, 0xE9, 0xE7), light.BorderColor);
+            Assert.Equal(Color(0x0F, 0x6C, 0xBD), light.AccentColor);
+            Assert.Equal(System.Drawing.Color.FromArgb(0x1A, 0x0F, 0x6C, 0xBD), light.AccentTintColor);
         }
 
         [Fact]
-        public void Light_card_background_matches_primary_background()
+        public void Light_cards_lift_off_the_page_background()
         {
-            // Part 4: cards are separated by a hairline border, not a fill difference.
-            // CardBgColor must equal PrimaryBg and hover must be one step darker — never a white swap.
+            // Frontend plan §10.7: cards must read as "raised" against the page — a deliberate lift,
+            // sealed with a hairline border. §14 light uses a subtle Notion-gray card over white.
             var light = ThemeService.Shared.FindByName("Light")!;
-            Assert.Equal(light.PrimaryBg, light.CardBgColor);
+            Assert.NotEqual(light.PrimaryBg, light.CardBgColor);
             Assert.Equal(light.SecondaryBg, light.CardBgColor);
         }
 
@@ -49,13 +50,14 @@ namespace VibeAlarm.Tests
         {
             var dark = ThemeService.Shared.FindByName("Dark")!;
             Assert.False(dark.IsLight);
-            Assert.Equal(Color(0x18, 0x19, 0x1A), dark.PrimaryBg);
-            Assert.Equal(Color(0x24, 0x25, 0x26), dark.CardBgColor);
-            Assert.Equal(Color(0x3A, 0x3B, 0x3C), dark.CardHoverBg);
-            Assert.Equal(Color(0xE4, 0xE6, 0xEB), dark.TextColor);
-            Assert.Equal(Color(0xB0, 0xB3, 0xB8), dark.MutedTextColor);
-            Assert.Equal(Color(0x3A, 0x3B, 0x3C), dark.BorderColor);
-            Assert.Equal(Color(0xFF, 0xFF, 0xFF), dark.AccentColor);
+            Assert.Equal(Color(0x19, 0x19, 0x19), dark.PrimaryBg);
+            Assert.Equal(Color(0x20, 0x20, 0x20), dark.CardBgColor);
+            Assert.Equal(Color(0x2A, 0x2A, 0x2A), dark.CardHoverBg);
+            Assert.Equal(Color(0xE9, 0xE9, 0xE7), dark.TextColor);
+            Assert.Equal(Color(0x9B, 0x9B, 0x99), dark.MutedTextColor);
+            Assert.Equal(Color(0x2F, 0x2F, 0x2F), dark.BorderColor);
+            Assert.Equal(Color(0x47, 0x9E, 0xF5), dark.AccentColor);
+            Assert.Equal(System.Drawing.Color.FromArgb(0x1A, 0x47, 0x9E, 0xF5), dark.AccentTintColor);
         }
 
         [Theory]

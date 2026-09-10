@@ -22,7 +22,8 @@ namespace VibeAlarm.UI.Controls
     {
         private static ThemePreset Active() => ThemeService.Shared.Current ?? ThemeService.Shared.Default;
 
-        /// <summary>Primary action (e.g. "+ New Task", "Create Task"). Flat, high-contrast, no gradient/shadow.</summary>
+        /// <summary>Primary action (e.g. "+ New Task", "Create Task"). Filled accent, white text,
+        /// 8px radius (§14.5) — the one strong colored element on screen.</summary>
         public static Guna2Button CreatePrimaryButton(
             string text,
             ThemePreset? preset = null,
@@ -32,24 +33,25 @@ namespace VibeAlarm.UI.Controls
             Guna2Button btn = new Guna2Button
             {
                 Text = text,
-                Font = DesignTokens.Typography.Mono(DesignTokens.Typography.ButtonSize, FontStyle.Bold),
-                FillColor = p.TextColor,
-                ForeColor = p.IsLight ? p.SurfaceElevated : DarkInk(p),
+                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize, FontStyle.Bold),
+                FillColor = p.AccentColor,
+                ForeColor = Color.White,
                 BorderThickness = 0,
-                BorderColor = p.TextColor,
+                BorderColor = p.AccentColor,
                 BorderRadius = DesignTokens.Radius.Small,
                 Animated = false,
                 Cursor = Cursors.Hand,
                 Enabled = enabled
             };
-            btn.HoverState.FillColor = p.KeyStateLift(p.TextColor, lift: true);
-            btn.HoverState.ForeColor = btn.ForeColor;
-            btn.PressedColor = p.KeyStatePress(p.TextColor);
+            btn.HoverState.FillColor = HoverAccent(p);
+            btn.HoverState.ForeColor = Color.White;
+            btn.PressedColor = Shade(p.AccentColor, 0.8f);
             ApplyDisabled(btn.DisabledState, p);
             return btn;
         }
 
-        /// <summary>Secondary action (e.g. "Cancel", "Today", "Filter"). Surface/transparent fill, visible border, subtle hover.</summary>
+        /// <summary>Secondary action (e.g. "Cancel", "Today", "Filter"). Notion ghost button:
+        /// transparent at rest, no border, card-hover fill on hover (§14.5).</summary>
         public static Guna2Button CreateSecondaryButton(
             string text,
             ThemePreset? preset = null,
@@ -59,18 +61,17 @@ namespace VibeAlarm.UI.Controls
             Guna2Button btn = new Guna2Button
             {
                 Text = text,
-                Font = DesignTokens.Typography.Mono(DesignTokens.Typography.ButtonSize),
-                FillColor = p.CardBgColor,
+                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize),
+                FillColor = Color.Transparent,
                 ForeColor = p.TextColor,
-                BorderThickness = 1,
-                BorderColor = p.BorderColor,
+                BorderThickness = 0,
+                BorderColor = Color.Transparent,
                 BorderRadius = DesignTokens.Radius.Small,
                 Animated = false,
                 Cursor = Cursors.Hand,
                 Enabled = enabled
             };
             btn.HoverState.FillColor = p.CardHoverBg;
-            btn.HoverState.BorderColor = p.TextColor;
             btn.HoverState.ForeColor = p.TextColor;
             btn.PressedColor = p.KeyStatePress(p.CardHoverBg);
             ApplyDisabled(btn.DisabledState, p);
@@ -280,6 +281,18 @@ namespace VibeAlarm.UI.Controls
         }
 
         private static int Clamp255(int v) => Math.Max(0, Math.Min(255, v));
+
+        /// <summary>Accent hover: one tonal step off the accent fill — lighter in dark, darker in light.</summary>
+        private static Color HoverAccent(ThemePreset p) =>
+            p.IsLight
+                ? Color.FromArgb(
+                    Clamp255(p.AccentColor.R + 24),
+                    Clamp255(p.AccentColor.G + 24),
+                    Clamp255(p.AccentColor.B + 24))
+                : Color.FromArgb(
+                    Clamp255(p.AccentColor.R + 40),
+                    Clamp255(p.AccentColor.G + 40),
+                    Clamp255(p.AccentColor.B + 40));
 
         private static Color KeyStateLift(this ThemePreset p, Color baseColor, bool lift)
         {

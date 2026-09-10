@@ -44,7 +44,9 @@ namespace VibeAlarm.Tests
 
             // Semantic status colors come from the preset.
             Assert.Equal(preset.ErrorColor, danger.ForeColor);
-            Assert.Equal(preset.TextColor, primary.FillColor);
+            Assert.Equal(preset.AccentColor, primary.FillColor);
+            Assert.Equal(preset.AccentColor, primary.BorderColor);
+            Assert.True(primary.ForeColor == Color.White, "Primary buttons use white text on the accent fill (§14.5).");
             Assert.Equal(preset.CardBgColor, text.FillColor);
         }
 

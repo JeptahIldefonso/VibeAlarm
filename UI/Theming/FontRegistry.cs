@@ -46,6 +46,10 @@ namespace VibeAlarm.UI.Theming
         private static readonly string[] DisplayCandidates = { "Inter SemiBold", "Inter", "Bahnschrift", "Segoe UI" };
         private static readonly string[] BodyCandidates = { "Inter", "Segoe UI Variable Text", "Segoe UI" };
         private static readonly string[] MonoCandidates = { "JetBrains Mono", "Cascadia Mono", "Consolas", "Courier New" };
+        private static readonly string[] SymbolCandidates = { "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol" };
+
+        /// <summary>True when at least one symbol face (Fluent/MDL2) is available for the sidebar glyphs.</summary>
+        public static bool HasSymbolFonts { get; private set; }
 
         /// <summary>True when at least one embedded face registered — useful for diagnostics/tests.</summary>
         public static bool HasEmbeddedFonts { get; private set; }
@@ -70,7 +74,26 @@ namespace VibeAlarm.UI.Theming
                 }
 
                 HasEmbeddedFonts = Loaded.Count > 0;
+                HasSymbolFonts = FamilyAvailable(SymbolCandidates);
             }
+        }
+
+        private static bool FamilyAvailable(string[] names)
+        {
+            using (InstalledFontCollection installed = new InstalledFontCollection())
+            {
+                foreach (FontFamily family in installed.Families)
+                {
+                    foreach (string name in names)
+                    {
+                        if (family.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
         private static void TryLoadEmbedded(string resourceName, string familyName)
@@ -175,10 +198,15 @@ namespace VibeAlarm.UI.Theming
         public static Font Mono(float size, FontStyle style = FontStyle.Regular)
             => Resolve(MonoCandidates, size, style);
 
+        /// <summary>Icon glyphs (sidebar, §14.3): Segoe Fluent Icons with an MDL2 fallback.</summary>
+        public static Font Symbol(float size, FontStyle style = FontStyle.Regular)
+            => Resolve(SymbolCandidates, size, style);
+
         /// <summary>The family actually backing each role. Diagnostics only.</summary>
         public static string ResolvedDisplayFamily => Describe(DisplayCandidates);
         public static string ResolvedBodyFamily => Describe(BodyCandidates);
         public static string ResolvedMonoFamily => Describe(MonoCandidates);
+        public static string ResolvedSymbolFamily => Describe(SymbolCandidates);
 
         private static string Describe(string[] candidates)
         {

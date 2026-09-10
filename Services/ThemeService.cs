@@ -86,52 +86,54 @@ namespace VibeAlarm.Services
 
         private void InitializePresets()
         {
-            // Exactly two modes, per product decision (Part 3). Light is grounded in the reference
-            // portfolio site; Dark is a neutral/near-grayscale adaptation (Facebook/Google-style
-            // dark values, kept strictly monochrome). The palette stays monochrome and editorial;
-            // these are tonal/contrast modes of the same design system, not colored themes.
+            // Exactly two modes, per product decision (Part 3). §14 supersedes the earlier
+            // monochrome identity: this is now the "Notion / Windows Calendar hybrid" — a warm
+            // near-black on dark, warm off-white on light, and one Fluent-style blue accent used
+            // for the primary action, the selected nav pill, and the calendar "today" circle.
 
-            // 1. Light (Default)
+            // 1. Light (Default) — Notion hybrid: white page, subtle gray sidebar/cards, blue accent.
             presets.Add(new ThemePreset
             {
                 Name = "Light",
-                PrimaryBg = Color.FromArgb(0xE5, 0xE5, 0xE5),      // #E5E5E5 (Tailwind neutral-200) lighter ground
-                SidebarBg = Color.FromArgb(0xE5, 0xE5, 0xE5),      // same ground tone
-                SecondaryBg = Color.FromArgb(0xE5, 0xE5, 0xE5),    // card surface = ground, no fill differentiation
-                CardBgColor = Color.FromArgb(0xE5, 0xE5, 0xE5),    // == PrimaryBg: cards separated by hairline, not fill
-                CardHoverBg = Color.FromArgb(0xDA, 0xDA, 0xDA),    // #DADADA one step darker hover, never a white swap
-                AccentColor = Color.FromArgb(0, 0, 0),             // #000000 pure black accent
-                TextColor = Color.FromArgb(0x17, 0x17, 0x17),      // #171717 (Tailwind neutral-900) near-black ink
-                MutedTextColor = Color.FromArgb(0x73, 0x73, 0x73), // #737373 (Tailwind neutral-500) secondary/labels
-                BorderColor = Color.FromArgb(0xA3, 0xA3, 0xA3),    // #A3A3A3 (Tailwind neutral-400) reads on lighter bg
+                PrimaryBg = Color.FromArgb(0xFF, 0xFF, 0xFF),      // #FFFFFF page
+                SidebarBg = Color.FromArgb(0xF7, 0xF7, 0xF5),      // #F7F7F5 Notion sidebar gray
+                SecondaryBg = Color.FromArgb(0xF7, 0xF7, 0xF5),    // #F7F7F5 raised surface
+                CardBgColor = Color.FromArgb(0xF7, 0xF7, 0xF5),    // #F7F7F5 cards
+                CardHoverBg = Color.FromArgb(0xEF, 0xEF, 0xED),    // #EFEFED hover
+                AccentColor = Color.FromArgb(0x0F, 0x6C, 0xBD),    // #0F6CBD Fluent blue
+                AccentTintColor = Color.FromArgb(0x1A, 0x0F, 0x6C, 0xBD), // 10% blue wash
+                TextColor = Color.FromArgb(0x37, 0x35, 0x2F),      // #37352F Notion ink
+                MutedTextColor = Color.FromArgb(0x78, 0x77, 0x74), // #787774
+                BorderColor = Color.FromArgb(0xE9, 0xE9, 0xE7),    // #E9E9E7 hairline
                 IsLight = true,
-                SurfaceElevated = Color.FromArgb(0xE0, 0xE0, 0xE0),
-                PressedColor = Color.FromArgb(0xCF, 0xCF, 0xCF),
-                SelectedColor = Color.FromArgb(0, 0, 0),
-                SelectedTextColor = Color.FromArgb(0xE5, 0xE5, 0xE5),
+                SurfaceElevated = Color.FromArgb(0xFF, 0xFF, 0xFF),
+                PressedColor = Color.FromArgb(0xE2, 0xE0, 0xDC),
+                SelectedColor = Color.FromArgb(0x0F, 0x6C, 0xBD),
+                SelectedTextColor = Color.FromArgb(0xFF, 0xFF, 0xFF),
                 SuccessColor = VibeAlarmPalette.Success,
                 WarningColor = VibeAlarmPalette.Warning,
                 ErrorColor = VibeAlarmPalette.Error
             });
 
-            // 2. Dark (Facebook/Google-style neutral dark)
+            // 2. Dark — Notion hybrid: warm near-black page, raised surfaces one step lighter, blue accent.
             presets.Add(new ThemePreset
             {
                 Name = "Dark",
-                PrimaryBg = Color.FromArgb(0x18, 0x19, 0x1A),      // #18191A
-                SidebarBg = Color.FromArgb(0x18, 0x19, 0x1A),      // same ground tone
-                SecondaryBg = Color.FromArgb(0x24, 0x25, 0x26),    // #242526 card surface
-                CardBgColor = Color.FromArgb(0x24, 0x25, 0x26),    // #242526
-                CardHoverBg = Color.FromArgb(0x3A, 0x3B, 0x3C),    // #3A3B3C hover
-                AccentColor = Color.FromArgb(0xFF, 0xFF, 0xFF),    // #FFFFFF neutral accent (no blue)
-                TextColor = Color.FromArgb(0xE4, 0xE6, 0xEB),      // #E4E6EB primary text
-                MutedTextColor = Color.FromArgb(0xB0, 0xB3, 0xB8), // #B0B3B8 secondary text
-                BorderColor = Color.FromArgb(0x3A, 0x3B, 0x3C),    // #3A3B3C border (matches hover)
+                PrimaryBg = Color.FromArgb(0x19, 0x19, 0x19),      // #191919 Notion dark page
+                SidebarBg = Color.FromArgb(0x20, 0x20, 0x20),      // #202020 raised sidebar
+                SecondaryBg = Color.FromArgb(0x20, 0x20, 0x20),    // #202020 raised surface
+                CardBgColor = Color.FromArgb(0x20, 0x20, 0x20),    // #202020 cards
+                CardHoverBg = Color.FromArgb(0x2A, 0x2A, 0x2A),    // #2A2A2A hover
+                AccentColor = Color.FromArgb(0x47, 0x9E, 0xF5),    // #479EF5 Fluent blue
+                AccentTintColor = Color.FromArgb(0x1A, 0x47, 0x9E, 0xF5), // 10% blue wash
+                TextColor = Color.FromArgb(0xE9, 0xE9, 0xE7),      // #E9E9E7
+                MutedTextColor = Color.FromArgb(0x9B, 0x9B, 0x99), // #9B9B99
+                BorderColor = Color.FromArgb(0x2F, 0x2F, 0x2F),    // #2F2F2F hairline
                 IsLight = false,
-                SurfaceElevated = Color.FromArgb(0x32, 0x33, 0x35),
-                PressedColor = Color.FromArgb(0x4B, 0x4D, 0x4F),
-                SelectedColor = Color.FromArgb(0xFF, 0xFF, 0xFF),
-                SelectedTextColor = Color.FromArgb(0x18, 0x19, 0x1A),
+                SurfaceElevated = Color.FromArgb(0x28, 0x28, 0x28),
+                PressedColor = Color.FromArgb(0x14, 0x14, 0x14),
+                SelectedColor = Color.FromArgb(0x47, 0x9E, 0xF5),
+                SelectedTextColor = Color.FromArgb(0xFF, 0xFF, 0xFF),
                 SuccessColor = VibeAlarmPalette.Success,
                 WarningColor = VibeAlarmPalette.Warning,
                 ErrorColor = VibeAlarmPalette.Error

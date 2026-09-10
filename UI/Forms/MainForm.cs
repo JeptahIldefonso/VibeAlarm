@@ -49,6 +49,7 @@ namespace VibeAlarm.UI.Forms
         private Color CardBgColor => currentTheme.CardBgColor;
         private Color CardHoverBg => currentTheme.CardHoverBg;
         private Color AccentColor => currentTheme.AccentColor;
+        private Color AccentTintColor => currentTheme.AccentTintColor;
         private Color TextColor => currentTheme.TextColor;
         private Color MutedTextColor => currentTheme.MutedTextColor;
         private Color BorderColor => currentTheme.BorderColor;
@@ -63,7 +64,6 @@ namespace VibeAlarm.UI.Forms
         private Panel mainContainer = null!;
         private Panel headerPanel = null!;
         private Panel contentPanel = null!;
-        private Panel activeNavIndicator = null!;
 
         // Header Input Items
         private TextBox txtSearch = null!;
@@ -75,6 +75,7 @@ namespace VibeAlarm.UI.Forms
         private Guna2Button btnCalendar = null!;
         private Guna2Button btnAmbient = null!;
         private Guna2Button btnSettings = null!;
+        private readonly Dictionary<string, string> navGlyphCodes = new();
 
         // Interactive Labels
         private Label lblGreeting = null!;
@@ -247,14 +248,19 @@ namespace VibeAlarm.UI.Forms
                 return;
             }
 
-            using Bitmap? bg = BackgroundService.LoadBackground(settings.ApplyMonochromeFilterToBackground, settings.BackgroundOpacity);
+            Bitmap? bg = BackgroundService.LoadBackground(settings.ApplyMonochromeFilterToBackground, settings.BackgroundOpacity);
             if (bg == null)
             {
                 return;
             }
 
-            this.BackgroundImage = bg;
+            // The form now owns the new bitmap for its lifetime: never `using` it here, or the
+            // pending repaint draws against a disposed image and throws GDI+ "Parameter is not
+            // valid." Dispose the PREVIOUS background instead, then swap.
+            Image? previous = this.BackgroundImage;
             this.BackgroundImageLayout = ImageLayout.Zoom;
+            this.BackgroundImage = bg;
+            previous?.Dispose();
         }
 
         private void OnAmbientPlayingChanged(string? displayName)
@@ -306,34 +312,61 @@ namespace VibeAlarm.UI.Forms
             };
             sidebarPanel.Controls.Add(lblAppLogo);
 
-            activeNavIndicator = new Panel { Width = 3, Height = 40, BackColor = AccentColor, Location = new Point(0, 0) };
-            sidebarPanel.Controls.Add(activeNavIndicator);
+            btnDashboard = CreateSidebarButton("E80F", "Home", "Dashboard", 96);
+            btnTasks = CreateSidebarButton("E9D5", "Tasks", "Tasks", 140);
+            btnCalendar = CreateSidebarButton("E787", "Calendar", "Calendar", 184);
+            btnAmbient = CreateSidebarButton("E767", "Ambient", "Ambient", 228);
 
-            btnDashboard = CreateSidebarButton("HOME", "Dashboard", 96, "01");
-            btnTasks = CreateSidebarButton("TASKS", "Tasks", 140, "02");
-            btnCalendar = CreateSidebarButton("CALENDAR", "Calendar", 184, "03");
-            btnAmbient = CreateSidebarButton("AMBIENT", "Ambient", 228, "04");
-            btnSettings = CreateSidebarButton("SETTINGS", "Settings", 340, "05");
+            // Hairline rule above SETTINGS: the bottom-pinned group is intentional, not a gap (§10.5).
+            Panel settingsDivider = new Panel
+            {
+                Location = new Point(24, 312),
+                Size = new Size(VibeAlarmPalette.SidebarWidth - 48, 8),
+                BackColor = Color.Transparent,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            settingsDivider.Paint += (s, e) =>
+            {
+                using Pen hairline = new Pen(BorderColor, 1);
+                e.Graphics.DrawLine(hairline, 0, 4, settingsDivider.Width, 4);
+            };
+            sidebarPanel.Controls.Add(settingsDivider);
+
+            btnSettings = CreateSidebarButton("E713", "Settings", "Settings", 340);
 
             sidebarPanel.Controls.AddRange(new Control[] { btnDashboard, btnTasks, btnCalendar, btnAmbient, btnSettings });
             BuildSidebarProgressCard();
         }
 
-        private Guna2Button CreateSidebarButton(string text, string viewKey, int topPosition, string number)
+        private Guna2Button CreateSidebarButton(string glyph, string label, string viewKey, int topPosition)
         {
-            Guna2Button btn = UIControlFactory.CreateIconButton($"{number}  {text}", preset: currentTheme);
-            btn.Tag = viewKey;
-            btn.Location = new Point(0, topPosition);
-            btn.Size = new Size(VibeAlarmPalette.SidebarWidth, 44);
-            btn.Font = VibeAlarmPalette.Mono(10F);
-            btn.ForeColor = MutedTextColor;
-            btn.FillColor = Color.Transparent;
-            btn.TextAlign = HorizontalAlignment.Left;
-            btn.Padding = new Padding(24, 0, 0, 0);
-            btn.Cursor = Cursors.Hand;
-            btn.Animated = false;
-            btn.HoverState.FillColor = currentTheme.IsLight ? Color.FromArgb(235, 234, 230) : Color.FromArgb(24, 24, 24);
-            btn.HoverState.ForeColor = TextColor;
+            // §14.3 Notion sidebar: icon + label, full-height "pill" for the active row, no
+            // numbered prefix. The glyph and caption live on the button itself (Image + Text)
+            // rather than as child controls: a child label over a Guna2Button swallows the
+            // mouse input, killing Click entirely (§15.1).
+            Guna2Button btn = new Guna2Button
+            {
+                Tag = viewKey,
+                Location = new Point(0, topPosition),
+                Size = new Size(VibeAlarmPalette.SidebarWidth, 44),
+                FillColor = Color.Transparent,
+                ForeColor = MutedTextColor,
+                BorderThickness = 0,
+                BorderRadius = 22, // <44 height / 2> = pill
+                Cursor = Cursors.Hand,
+                Animated = false,
+                Font = VibeAlarmPalette.Body(10F),
+                Text = label,
+                TextAlign = HorizontalAlignment.Left,
+                TextOffset = new Point(46, 0), // clear of the 22px glyph slot + gap
+                ImageAlign = HorizontalAlignment.Left,
+                ImageOffset = new Point(16, 0),
+                ImageSize = new Size(22, 22)
+            };
+            btn.HoverState.FillColor = currentTheme.CardHoverBg;
+            btn.HoverState.ForeColor = currentTheme.TextColor;
+            navGlyphCodes[viewKey] = glyph;
+            btn.Image = RenderNavGlyph(glyph, MutedTextColor);
 
             btn.Click += (s, e) =>
             {
@@ -344,16 +377,38 @@ namespace VibeAlarm.UI.Forms
             return btn;
         }
 
+        /// <summary>Renders a sidebar glyph to a small bitmap for Guna2Button.Image. The drawn
+        /// color is baked in, so RenderActiveView re-renders it when the active row changes.</summary>
+        private Bitmap RenderNavGlyph(string glyph, Color color)
+        {
+            string glyphText = FontRegistry.HasSymbolFonts ? ((char)Convert.ToInt32(glyph, 16)).ToString() : "●";
+            Bitmap bmp = new Bitmap(22, 22);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using Font f = FontRegistry.HasSymbolFonts ? FontRegistry.Symbol(12F) : VibeAlarmPalette.Mono(12F, FontStyle.Bold);
+                using SolidBrush b = new SolidBrush(color);
+                using StringFormat sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                g.DrawString(glyphText, f, b, new RectangleF(0, 0, 22, 22), sf);
+            }
+            return bmp;
+        }
+
         private void BuildSidebarProgressCard()
         {
-            sidebarProgressCard = CreateCard(new Point(16, 560), new Size(188, 148), 4, CardBgColor, BorderColor);
+            sidebarProgressCard = CreateCard(new Point(16, 560), new Size(188, 148), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             sidebarProgressCard.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
 
-            lblSidebarIcon = CreateLabel("[]", new Point(16, 16), new Size(24, 24), 15F, FontStyle.Bold, TextColor);
+            lblSidebarIcon = CreateLabel("●", new Point(16, 16), new Size(24, 24), 15F, FontStyle.Bold, TextColor);
+            lblSidebarIcon.Font = new Font("Segoe UI Symbol", 15F, FontStyle.Regular);
             lblSidebarRemaining = CreateLabel("0 Tasks Remaining", new Point(16, 46), new Size(156, 22), 9.5F, FontStyle.Bold, TextColor);
             lblSidebarEncouragement = CreateLabel("Keep going!", new Point(16, 68), new Size(156, 18), 8.5F, FontStyle.Regular, MutedTextColor);
 
-            sidebarProgressTrack = new Panel { Location = new Point(16, 104), Size = new Size(116, 6), BackColor = currentTheme.IsLight ? Color.FromArgb(220, 219, 215) : Color.FromArgb(40, 40, 40) };
+            sidebarProgressTrack = new Panel { Location = new Point(16, 104), Size = new Size(116, 6), BackColor = currentTheme.BorderColor };
             sidebarProgressFill = new Panel { Location = new Point(0, 0), Size = new Size(0, 6), BackColor = TextColor };
             lblSidebarPercent = CreateLabel("0%", new Point(146, 96), new Size(32, 20), 9F, FontStyle.Bold, MutedTextColor);
 
@@ -389,7 +444,7 @@ namespace VibeAlarm.UI.Forms
             txtSearch = new TextBox
             {
                 Location = new Point(520, 28),
-                Size = new Size(310, 42),
+                Size = new Size(310, 40),
                 Font = VibeAlarmPalette.Body(12F),
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = CardBgColor,
@@ -397,6 +452,11 @@ namespace VibeAlarm.UI.Forms
                 Text = "  Search tasks...",
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
+
+            // Never leave the caret scrolled to the end on a fresh box — that renders the
+            // placeholder's tail ("ks...") instead of its start (§10.1).
+            txtSearch.SelectionStart = 0;
+            txtSearch.SelectionLength = 0;
 
             txtSearch.GotFocus += (s, e) => {
                 if (txtSearch.Text == PlaceholderSearch || txtSearch.Text.Trim() == "Search tasks...")
@@ -448,50 +508,90 @@ namespace VibeAlarm.UI.Forms
                 e.Graphics.DrawLine(hairline, 0, 0, statusBarPanel.Width, 0);
             };
 
-            Label lblStatusCaption = CreateLabel("NEXT UP", new Point(24, 10), new Size(96, 16), 8.5F, FontStyle.Bold, MutedTextColor);
-            lblStatusCaption.Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold);
-            ApplyLetterSpacing(lblStatusCaption);
-            statusBarPanel.Controls.Add(lblStatusCaption);
+            Label lblStatusCaption = CreateLabel("NEXT UP", Point.Empty, new Size(0, 16), 8.5F, FontStyle.Bold, MutedTextColor);
+            lblStatusCaption.Font = VibeAlarmPalette.Body(8.5F, FontStyle.Bold);
+            lblStatusCaption.Dock = DockStyle.Fill;
+            lblStatusCaption.TextAlign = ContentAlignment.MiddleLeft;
+            lblStatusCaption.Margin = new Padding(0, 0, 24, 0);
 
-            lblStatusNextUpName = CreateLabel("No upcoming schedules.", new Point(96, 6), new Size(420, 18), 11.5F, FontStyle.Bold, TextColor);
-            lblStatusNextUpTime = CreateLabel("--:-- --", new Point(96, 28), new Size(420, 20), 10F, FontStyle.Regular, MutedTextColor);
-            statusBarPanel.Controls.AddRange(new Control[] { lblStatusNextUpName, lblStatusNextUpTime });
-
-            lblStatusNextUpCountdown = CreateLabel("—", new Point(700, 14), new Size(170, 28), 15F, FontStyle.Bold, TextColor);
-            lblStatusNextUpCountdown.Font = VibeAlarmPalette.Mono(15F, FontStyle.Bold);
-            lblStatusNextUpCountdown.TextAlign = ContentAlignment.MiddleRight;
-            lblStatusNextUpCountdown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            statusBarPanel.Controls.Add(lblStatusNextUpCountdown);
-
-            btnStatusDismiss = CreateGhostButton("DISMISS", new Point(0, 10), new Size(104, 34));
-            btnStatusDismiss.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnStatusDismiss.Click += (_, _) => DismissFromStatusBar();
-            ApplyLetterSpacing(btnStatusDismiss);
-            statusBarPanel.Controls.Add(btnStatusDismiss);
-
-            btnStatusSnooze = CreateGhostButton("SNOOZE +9M", new Point(0, 10), new Size(120, 34));
-            btnStatusSnooze.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnStatusSnooze.Click += (_, _) => SnoozeFromStatusBar();
-            ApplyLetterSpacing(btnStatusSnooze);
-            statusBarPanel.Controls.Add(btnStatusSnooze);
-
-            statusBarPanel.Resize += (s, e) => ArrangeStatusBar();
-            ArrangeStatusBar();
-        }
-
-        private void ArrangeStatusBar()
-        {
-            if (statusBarPanel == null || btnStatusSnooze == null || btnStatusDismiss == null)
+            // Left info cluster: title over time, stacked with automatic spacing.
+            TableLayoutPanel info = new TableLayoutPanel
             {
-                return;
-            }
-            const int gap = 10;
-            const int dismissW = 104;
-            const int snoozeW = 120;
-            int w = statusBarPanel.ClientSize.Width;
-            int top = (statusBarPanel.ClientSize.Height - 34) / 2;
-            btnStatusDismiss.Location = new Point(w - dismissW, top);
-            btnStatusSnooze.Location = new Point(w - dismissW - gap - snoozeW, top);
+                RowCount = 2,
+                ColumnCount = 1,
+                BackColor = Color.Transparent
+            };
+            info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            lblStatusNextUpName = CreateLabel("No upcoming schedules.", Point.Empty, new Size(0, 18), 11.5F, FontStyle.Bold, TextColor);
+            lblStatusNextUpName.Dock = DockStyle.Fill;
+            lblStatusNextUpName.TextAlign = ContentAlignment.MiddleLeft;
+            lblStatusNextUpName.Margin = new Padding(0);
+            lblStatusNextUpTime = CreateLabel("--:-- --", Point.Empty, new Size(0, 20), 10F, FontStyle.Regular, MutedTextColor);
+            lblStatusNextUpTime.Dock = DockStyle.Fill;
+            lblStatusNextUpTime.TextAlign = ContentAlignment.MiddleLeft;
+            lblStatusNextUpTime.Margin = new Padding(0);
+            info.Controls.Add(lblStatusNextUpName);
+            info.Controls.Add(lblStatusNextUpTime);
+
+            // Countdown fills the middle and right-aligns itself regardless of label widths.
+            lblStatusNextUpCountdown = CreateLabel("—", Point.Empty, new Size(0, 28), 15F, FontStyle.Bold, TextColor);
+            lblStatusNextUpCountdown.Font = VibeAlarmPalette.Mono(15F, FontStyle.Bold);
+            lblStatusNextUpCountdown.Dock = DockStyle.Fill;
+            lblStatusNextUpCountdown.TextAlign = ContentAlignment.MiddleRight;
+            lblStatusNextUpCountdown.Margin = new Padding(24, 0, 24, 0);
+
+            // Matched action pair. Buttons size to content (MinWidth is a floor, not a ceiling)
+            // so letter-distance never clips "SNOOZE +9M" vs "DISMISS" differently (§10.2).
+            FlowLayoutPanel actions = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(24, 0, 0, 0)
+            };
+
+            btnStatusSnooze = CreateStatusActionButton("SNOOZE", AccentColor);
+            btnStatusSnooze.AutoSize = true;
+            btnStatusSnooze.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            btnStatusSnooze.MinimumSize = new Size(96, 34);
+            btnStatusSnooze.Padding = new Padding(16, 0, 16, 0);
+            btnStatusSnooze.Margin = new Padding(0, 12, 10, 12);
+            btnStatusSnooze.AccessibleName = "Snooze next up for nine minutes";
+            btnStatusSnooze.Click += (_, _) => SnoozeFromStatusBar();
+
+            btnStatusDismiss = CreateStatusActionButton("DISMISS", TextColor);
+            btnStatusDismiss.AutoSize = true;
+            btnStatusDismiss.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            btnStatusDismiss.MinimumSize = new Size(96, 34);
+            btnStatusDismiss.Padding = new Padding(16, 0, 16, 0);
+            btnStatusDismiss.Margin = new Padding(10, 12, 0, 12);
+            btnStatusDismiss.AccessibleName = "Dismiss next up";
+            btnStatusDismiss.Click += (_, _) => DismissFromStatusBar();
+
+            actions.Controls.Add(btnStatusSnooze);
+            actions.Controls.Add(btnStatusDismiss);
+
+            // Auto, Auto, *, Auto — guaranteed alignment regardless of text length (§10.4).
+            TableLayoutPanel bar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                RowCount = 1,
+                ColumnCount = 4
+            };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.Controls.Add(lblStatusCaption, 0, 0);
+            bar.Controls.Add(info, 1, 0);
+            bar.Controls.Add(lblStatusNextUpCountdown, 2, 0);
+            bar.Controls.Add(actions, 3, 0);
+            statusBarPanel.Controls.Add(bar);
         }
 
         private void ArrangeHeaderActions()
@@ -501,19 +601,20 @@ namespace VibeAlarm.UI.Forms
                 return;
             }
 
-            const int gap = 22;
+            const int gap = 24;
             int buttonWidth = 142;
             const int btnHeight = 38;
+            const int searchHeight = 40;
             int rightEdge = headerPanel.ClientSize.Width;
             int desiredSearchWidth = 310;
             int availableSearchWidth = rightEdge - buttonWidth - gap - 520;
-            int searchWidth = Math.Max(220, Math.Min(desiredSearchWidth, availableSearchWidth));
-            int btnTop = 28 + (42 - btnHeight) / 2; // center the compact button against the 42px search box
+            int searchWidth = Math.Max(240, Math.Min(desiredSearchWidth, availableSearchWidth));
+            int btnTop = 28 + (searchHeight - btnHeight) / 2; // center the compact button against the search box
 
             btnNewTask.Location = new Point(Math.Max(0, rightEdge - buttonWidth), btnTop);
             btnNewTask.Size = new Size(buttonWidth, btnHeight);
             txtSearch.Location = new Point(Math.Max(0, btnNewTask.Left - gap - searchWidth), 28);
-            txtSearch.Size = new Size(searchWidth, 42);
+            txtSearch.Size = new Size(searchWidth, searchHeight);
         }
 
         private void ExecuteModalTaskCreationDialogue()
@@ -550,13 +651,22 @@ namespace VibeAlarm.UI.Forms
                 _ => btnTasks
             };
 
-            activeNavIndicator.Location = new Point(0, targetBtn.Top);
-
             foreach (Guna2Button btn in new[] { btnDashboard, btnTasks, btnCalendar, btnAmbient, btnSettings })
             {
                 bool isCurrent = btn == targetBtn;
-                btn.ForeColor = isCurrent ? TextColor : MutedTextColor;
-                btn.Font = VibeAlarmPalette.Mono(10F, isCurrent ? FontStyle.Bold : FontStyle.Regular);
+                if (btn.Tag is not string key)
+                {
+                    continue;
+                }
+                // §14.3 pill: active = accent-tinted fill + accent glyph/ink; idle = transparent.
+                btn.FillColor = isCurrent ? currentTheme.AccentTintColor : Color.Transparent;
+                btn.ForeColor = isCurrent ? currentTheme.TextColor : MutedTextColor;
+                if (navGlyphCodes.TryGetValue(key, out string? code))
+                {
+                    Image prev = btn.Image;
+                    btn.Image = RenderNavGlyph(code, isCurrent ? currentTheme.AccentColor : MutedTextColor);
+                    prev?.Dispose();
+                }
             }
 
             switch (activeView)
@@ -649,17 +759,18 @@ namespace VibeAlarm.UI.Forms
             lblCalendarMonth = new Label
             {
                 Text = displayedCalendarMonth.ToString("MMMM yyyy"),
-                Location = new Point(24, 13),
-                Size = new Size(260, 28),
+                Location = new Point(24, 12),
+                Size = new Size(320, 30),
                 Font = VibeAlarmPalette.Display(16F, FontStyle.Bold),
                 ForeColor = TextColor,
                 BackColor = Color.Transparent
             };
 
             Guna2Button btnPrev = UIControlFactory.CreateSecondaryButton("<", preset: currentTheme);
-            btnPrev.Location = new Point(740, 10);
+            btnPrev.Location = new Point(768, 10);
             btnPrev.Size = new Size(42, 34);
             btnPrev.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnPrev.AccessibleName = "Previous month";
             btnPrev.Click += (s, e) =>
             {
                 displayedCalendarMonth = displayedCalendarMonth.AddMonths(-1);
@@ -667,9 +778,10 @@ namespace VibeAlarm.UI.Forms
             };
 
             Guna2Button btnToday = UIControlFactory.CreateSecondaryButton("Today", preset: currentTheme);
-            btnToday.Location = new Point(792, 10);
+            btnToday.Location = new Point(822, 10);
             btnToday.Size = new Size(78, 34);
             btnToday.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnToday.AccessibleName = "Jump to today";
             btnToday.Click += (s, e) =>
             {
                 activeCalendarDate = DateTime.Today;
@@ -679,9 +791,10 @@ namespace VibeAlarm.UI.Forms
             };
 
             Guna2Button btnNext = UIControlFactory.CreateSecondaryButton(">", preset: currentTheme);
-            btnNext.Location = new Point(880, 10);
+            btnNext.Location = new Point(912, 10);
             btnNext.Size = new Size(42, 34);
             btnNext.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnNext.AccessibleName = "Next month";
             btnNext.Click += (s, e) =>
             {
                 displayedCalendarMonth = displayedCalendarMonth.AddMonths(1);
@@ -693,18 +806,18 @@ namespace VibeAlarm.UI.Forms
             Guna2Panel nextUpCard = UIControlFactory.CreatePanel(
                 CardBgColor,
                 border: true,
-                radius: DesignTokens.Radius.Small,
+                radius: DesignTokens.Radius.Medium,
                 preset: currentTheme);
             nextUpCard.Location = new Point(0, 66);
             nextUpCard.Size = new Size(970, 116);
             nextUpCard.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            Label lblNextUpTitle = CreateLabel("NEXT UP", new Point(24, 14), new Size(160, 18), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblNextUpTitle.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblNextUpTitle);
-            lblNextUpTime = CreateLabel("--:-- --", new Point(24, 32), new Size(380, 34), 26F, FontStyle.Bold, TextColor);
+            nextUpCard.Padding = new Padding(24, 0, 24, 0);
+            Label lblNextUpTitle = CreateLabel("NEXT UP", new Point(24, 16), new Size(160, 18), 9.5F, FontStyle.Bold, MutedTextColor);
+            lblNextUpTitle.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
+            lblNextUpTime = CreateLabel("--:-- --", new Point(24, 34), new Size(420, 38), 26F, FontStyle.Bold, TextColor);
             lblNextUpTime.Font = VibeAlarmPalette.Display(24F, FontStyle.Bold);
-            lblNextUpName = CreateLabel("No upcoming schedules.", new Point(24, 72), new Size(420, 22), 12F, FontStyle.Regular, MutedTextColor);
-            lblNextUpCountdown = CreateLabel("—", new Point(720, 42), new Size(226, 36), 17F, FontStyle.Bold, TextColor);
+            lblNextUpName = CreateLabel("No upcoming schedules.", new Point(24, 78), new Size(460, 22), 12F, FontStyle.Regular, MutedTextColor);
+            lblNextUpCountdown = CreateLabel("—", new Point(700, 42), new Size(246, 36), 17F, FontStyle.Bold, TextColor);
             lblNextUpCountdown.Font = VibeAlarmPalette.Mono(17F, FontStyle.Bold);
             lblNextUpCountdown.TextAlign = ContentAlignment.MiddleRight;
             lblNextUpCountdown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -731,12 +844,12 @@ namespace VibeAlarm.UI.Forms
             Guna2Panel actionRow = UIControlFactory.CreatePanel(
                 CardBgColor,
                 border: true,
-                radius: DesignTokens.Radius.Small,
+                radius: DesignTokens.Radius.Medium,
                 preset: currentTheme);
             actionRow.Location = new Point(0, 460);
             actionRow.Size = new Size(970, 44);
             actionRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblCalendarProgress = CreateLabel("0 tasks completed today", new Point(20, 13), new Size(460, 22), 10.5F, FontStyle.Bold, TextColor);
+            lblCalendarProgress = CreateLabel("0 tasks completed today", new Point(24, 13), new Size(460, 22), 10.5F, FontStyle.Bold, TextColor);
             actionRow.Controls.Add(lblCalendarProgress);
 
             // LIVE clock chip — updates every second (via TimeService), independent of the calendar grid.
@@ -744,6 +857,7 @@ namespace VibeAlarm.UI.Forms
             lblLiveClock.Font = VibeAlarmPalette.Mono(11F, FontStyle.Bold);
             lblLiveClock.TextAlign = ContentAlignment.MiddleCenter;
             lblLiveClock.Text = $"● LIVE  {DateTime.Now:hh:mm:ss tt}";
+            lblLiveClock.Padding = new Padding(0, 0, 24, 0);
             lblLiveClock.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             actionRow.Controls.Add(lblLiveClock);
 
@@ -806,7 +920,7 @@ namespace VibeAlarm.UI.Forms
             int upcomingCount = masterTaskList.Count(t =>
                 t.GetState() is TaskState.Scheduled or TaskState.Due && GetTaskDate(t).Date == date.Date);
 
-            // Summarize the day's most advanced state for a compact editorial status line.
+            // Compact editorial status line beneath the day number.
             string status = string.Empty;
             if (upcomingCount > 0)
             {
@@ -821,42 +935,89 @@ namespace VibeAlarm.UI.Forms
                 status = $"— {expiredCount} past";
             }
 
-            string cellText = string.IsNullOrEmpty(status)
-                ? date.Day.ToString()
-                : $"{date.Day}\n{status}";
-
-            // TODAY gets a stronger monochrome treatment; SELECTED becomes a filled cell;
-            // PAST days are de-emphasized; FUTURE days render at normal weight.
-            Color back = isSelected
-                ? TextColor
-                : isToday
-                    ? currentTheme.IsLight ? Color.FromArgb(236, 235, 231) : Color.FromArgb(30, 30, 30)
-                    : CardBgColor;
-            Color fore = isSelected
-                ? currentTheme.IsLight ? VibeAlarmPalette.Surface : Color.Black
+            // §14.4 Notion/Calendar: TODAY = number inside a filled accent circle; a small accent
+            // dot under the number signals a day with tasks; SELECTED = accent-tinted wash.
+            Color numberColor = isToday
+                ? Color.White
                 : isPast
                     ? Color.FromArgb(150, MutedTextColor)
                     : isCurrentMonth ? TextColor : MutedTextColor;
+            Color statusColor = isPast ? Color.FromArgb(120, MutedTextColor) : MutedTextColor;
 
-            Button cell = new Button
+            Panel cell = new Panel
             {
-                Text = cellText,
                 Tag = date,
                 Dock = DockStyle.Fill,
                 Margin = new Padding(3),
-                FlatStyle = FlatStyle.Flat,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Font = VibeAlarmPalette.Mono(scheduledCount > 0 ? 7.5F : 8.5F),
-                BackColor = back,
-                ForeColor = fore,
-                Cursor = Cursors.Hand
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Hand,
+                AccessibleName = date.ToString("dddd, MMMM d, yyyy")
             };
-            cell.FlatAppearance.BorderSize = 1;
-            cell.FlatAppearance.BorderColor = isToday || isSelected ? TextColor : BorderColor;
-            cell.FlatAppearance.MouseOverBackColor = isSelected ? TextColor : CardHoverBg;
+            bool hovering = false;
+            float dpr = DeviceDpi / 96F;
+            int contentTop = (int)(6 * dpr);
+
+            void DrawNumber(Graphics g)
+            {
+                Font numberFont = VibeAlarmPalette.Mono((float)(isToday ? 9.5 : 8.5), isToday ? FontStyle.Bold : FontStyle.Regular);
+                using StringFormat fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                int d = (int)(20 * dpr);
+                int cx = cell.Width / 2;
+                RectangleF cellRect = new RectangleF(0, contentTop, cell.Width, d + 2);
+                if (isToday)
+                {
+                    using SolidBrush circleBrush = new SolidBrush(AccentColor);
+                    g.FillEllipse(circleBrush, cx - d / 2f, contentTop, d, d);
+                }
+                g.DrawString(date.Day.ToString(), numberFont, new SolidBrush(numberColor), cellRect, fmt);
+            }
+
+            void DrawStatus(Graphics g)
+            {
+                if (string.IsNullOrEmpty(status))
+                {
+                    return;
+                }
+                using Font statusFont = VibeAlarmPalette.Mono(6.5F);
+                using StringFormat fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                RectangleF rect = new RectangleF(0, (int)(28 * dpr), cell.Width, 12);
+                g.DrawString(status, statusFont, new SolidBrush(statusColor), rect, fmt);
+            }
+
+            void DrawDot(Graphics g)
+            {
+                if (scheduledCount <= 0)
+                {
+                    return;
+                }
+                using SolidBrush dotBrush = new SolidBrush(AccentColor);
+                g.FillEllipse(dotBrush, cell.Width / 2f - 2.5f * dpr, cell.Height - (int)(8 * dpr), 5 * dpr, 5 * dpr);
+            }
+
+            cell.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                Rectangle rect = new Rectangle(0, 0, cell.Width - 1, cell.Height - 1);
+                using (GraphicsPath path = GetRoundRectPath(rect, DesignTokens.Radius.Small))
+                {
+                    using SolidBrush fillBrush = new SolidBrush(isSelected ? AccentTintColor : hovering ? CardHoverBg : Color.Transparent);
+                    e.Graphics.FillPath(fillBrush, path);
+                    if (isSelected)
+                    {
+                        using Pen ring = new Pen(AccentColor, 1.6F);
+                        e.Graphics.DrawPath(ring, path);
+                    }
+                }
+                DrawNumber(e.Graphics);
+                DrawStatus(e.Graphics);
+                DrawDot(e.Graphics);
+            };
+
+            cell.MouseEnter += (s, e) => { hovering = true; cell.Invalidate(); };
+            cell.MouseLeave += (s, e) => { hovering = false; cell.Invalidate(); };
             cell.Click += (s, e) =>
             {
-                if (s is not Button clickedCell || clickedCell.Tag is not DateTime clickedDate)
+                if (cell.Tag is not DateTime clickedDate)
                 {
                     return;
                 }
@@ -877,7 +1038,7 @@ namespace VibeAlarm.UI.Forms
             Guna2Panel metricsPanel = UIControlFactory.CreatePanel(
                 CardBgColor,
                 border: true,
-                radius: DesignTokens.Radius.Small,
+                radius: DesignTokens.Radius.Medium,
                 preset: currentTheme);
             metricsPanel.Location = new Point(0, 4);
             metricsPanel.Size = new Size(940, 96);
@@ -888,8 +1049,7 @@ namespace VibeAlarm.UI.Forms
             metricsPanel.Controls.AddRange(new Control[] { lblFocusHeading, lblFocusPara });
 
             Label lblUpcomingTitle = CreateLabel("TODAY'S TASKS", new Point(2, 124), new Size(400, 18), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblUpcomingTitle.Font = VibeAlarmPalette.Mono(8F, FontStyle.Bold);
-            ApplyLetterSpacing(lblUpcomingTitle);
+            lblUpcomingTitle.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             dashboardFocusPanel = new FlowLayoutPanel
             {
@@ -905,18 +1065,47 @@ namespace VibeAlarm.UI.Forms
             contentPanel.Controls.AddRange(new Control[] { metricsPanel, lblUpcomingTitle, dashboardFocusPanel });
         }
 
+        /// <summary>Settings action row: icon + title on a bordered card, left-aligned, chrome so it
+        /// reads as a clickable row rather than a bare hyperlink (§15.2). Icon and title live on the
+        /// button itself — never as child controls.</summary>
+        private Guna2Button CreateSettingsRowButton(string glyph, string title, Color ink, ThemePreset p)
+        {
+            Guna2Button btn = new Guna2Button
+            {
+                Text = title,
+                Font = VibeAlarmPalette.Body(10F),
+                FillColor = p.CardBgColor,
+                ForeColor = ink,
+                BorderThickness = 1,
+                BorderColor = p.BorderColor,
+                BorderRadius = DesignTokens.Radius.Medium,
+                Cursor = Cursors.Hand,
+                Animated = false,
+                TextAlign = HorizontalAlignment.Left,
+                TextOffset = new Point(52, 0), // clear of the 22px glyph slot + gap
+                ImageAlign = HorizontalAlignment.Left,
+                ImageOffset = new Point(16, 0),
+                ImageSize = new Size(22, 22)
+            };
+            btn.HoverState.FillColor = p.CardHoverBg;
+            btn.HoverState.ForeColor = ink;
+            btn.HoverState.BorderColor = ink;
+            btn.Image = RenderNavGlyph(glyph, ink);
+            return btn;
+        }
+
         private void RenderSettingsView()
         {
             UpdateGreetingContext();
 
             Label lblSection = CreateLabel("TASK DATA", new Point(2, 12), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblSection.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblSection);
+            lblSection.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
-            Guna2Button btnClearData = UIControlFactory.CreateDangerButton("Delete all tasks", preset: currentTheme);
+            Guna2Button btnClearData = CreateSettingsRowButton("E74D", "Delete all tasks", currentTheme.ErrorColor, currentTheme);
             btnClearData.Location = new Point(0, 44);
             btnClearData.Size = new Size(940, 40);
             btnClearData.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            btnClearData.BorderColor = currentTheme.ErrorColor;
             btnClearData.Click += (s, e) =>
             {
                 if (MessageBox.Show("Delete all active task records permanently?", "Confirm Reset", MessageBoxButtons.YesNo, MessageBoxIcon.Stop) == DialogResult.Yes)
@@ -927,11 +1116,10 @@ namespace VibeAlarm.UI.Forms
                 }
             };
 
-            Guna2Button btnResetCompletion = UIControlFactory.CreateSecondaryButton("Reset Task Completion Status", preset: currentTheme);
+            Guna2Button btnResetCompletion = CreateSettingsRowButton("E777", "Reset Task Completion Status", AccentColor, currentTheme);
             btnResetCompletion.Location = new Point(0, 100);
             btnResetCompletion.Size = new Size(940, 40);
             btnResetCompletion.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnResetCompletion.ForeColor = AccentColor;
             btnResetCompletion.Click += (s, e) =>
             {
                 foreach (var t in masterTaskList)
@@ -943,11 +1131,10 @@ namespace VibeAlarm.UI.Forms
                 MessageBox.Show("All task completion statuses have been reset!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
-            Guna2Button btnOpenDataFolder = UIControlFactory.CreateSecondaryButton("Open data folder", preset: currentTheme);
+            Guna2Button btnOpenDataFolder = CreateSettingsRowButton("E8B7", "Open data folder", MutedTextColor, currentTheme);
             btnOpenDataFolder.Location = new Point(0, 156);
             btnOpenDataFolder.Size = new Size(940, 40);
             btnOpenDataFolder.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnOpenDataFolder.ForeColor = MutedTextColor;
             btnOpenDataFolder.Click += (s, e) =>
             {
                 try
@@ -966,13 +1153,12 @@ namespace VibeAlarm.UI.Forms
             };
 
             Label lblThemeSection = CreateLabel("THEME", new Point(2, 224), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblThemeSection.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblThemeSection);
+            lblThemeSection.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             // 2-state picker: a toggle is the honest control for a binary Light/Dark choice (not a 2-item dropdown).
             bool darkEnabled = !currentTheme.IsLight;
             Label lblThemeDark = CreateLabel("DARK", new Point(0, 258), new Size(60, 20), 9F, FontStyle.Bold, MutedTextColor);
-            lblThemeDark.Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold);
+            lblThemeDark.Font = VibeAlarmPalette.Body(9F, FontStyle.Bold);
             lblThemeDark.TextAlign = ContentAlignment.MiddleLeft;
             Guna2ToggleSwitch themeToggle = UIControlFactory.CreateToggle(darkEnabled, preset: currentTheme);
             themeToggle.Location = new Point(66, 256);
@@ -986,39 +1172,36 @@ namespace VibeAlarm.UI.Forms
                 }
             };
             Label lblThemeLight = CreateLabel("LIGHT", new Point(128, 258), new Size(60, 20), 9F, FontStyle.Bold, MutedTextColor);
-            lblThemeLight.Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold);
+            lblThemeLight.Font = VibeAlarmPalette.Body(9F, FontStyle.Bold);
             lblThemeLight.TextAlign = ContentAlignment.MiddleLeft;
 
             Label lblBehaviorSection = CreateLabel("STARTUP", new Point(2, 314), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblBehaviorSection.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblBehaviorSection);
+            lblBehaviorSection.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             bool startupEnabled = SettingsService.IsRunOnStartupEnabled();
-            Guna2Button btnStartup = UIControlFactory.CreateSecondaryButton(startupEnabled ? "Disable Launch on Windows Startup" : "Enable Launch on Windows Startup", preset: currentTheme);
+            Guna2Button btnStartup = CreateSettingsRowButton("E7E8", startupEnabled ? "Disable Launch on Windows Startup" : "Enable Launch on Windows Startup", startupEnabled ? AccentColor : TextColor, currentTheme);
             btnStartup.Location = new Point(0, 346);
             btnStartup.Size = new Size(940, 40);
             btnStartup.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnStartup.ForeColor = startupEnabled ? AccentColor : TextColor;
             btnStartup.Click += (s, e) =>
             {
                 bool nowEnabled = SettingsService.IsRunOnStartupEnabled();
                 SettingsService.SetRunOnStartup(!nowEnabled);
                 btnStartup.Text = !nowEnabled ? "Disable Launch on Windows Startup" : "Enable Launch on Windows Startup";
                 btnStartup.ForeColor = !nowEnabled ? AccentColor : TextColor;
+                btnStartup.HoverState.ForeColor = !nowEnabled ? AccentColor : TextColor;
                 MessageBox.Show(!nowEnabled ? "Launch on startup enabled!" : "Launch on startup disabled!", "Startup Settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
 
             // ---- System tray / hide-not-close ----
             Label lblTraySection = CreateLabel("SYSTEM", new Point(2, 412), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblTraySection.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblTraySection);
+            lblTraySection.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             bool trayEnabled = SettingsService.Load().MinimizeToTray;
-            Guna2Button btnTray = UIControlFactory.CreateSecondaryButton(trayEnabled ? "Disable Minimize to Tray" : "Enable Minimize to Tray", preset: currentTheme);
+            Guna2Button btnTray = CreateSettingsRowButton("E7F4", trayEnabled ? "Disable Minimize to Tray" : "Enable Minimize to Tray", trayEnabled ? AccentColor : TextColor, currentTheme);
             btnTray.Location = new Point(0, 444);
             btnTray.Size = new Size(940, 40);
             btnTray.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnTray.ForeColor = trayEnabled ? AccentColor : TextColor;
             btnTray.Click += (_, _) =>
             {
                 AppSettings settings = SettingsService.Load();
@@ -1026,6 +1209,7 @@ namespace VibeAlarm.UI.Forms
                 SettingsService.Save(settings);
                 btnTray.Text = settings.MinimizeToTray ? "Disable Minimize to Tray" : "Enable Minimize to Tray";
                 btnTray.ForeColor = settings.MinimizeToTray ? AccentColor : TextColor;
+                btnTray.HoverState.ForeColor = settings.MinimizeToTray ? AccentColor : TextColor;
                 MessageBox.Show(settings.MinimizeToTray
                     ? "Closing the window will hide VibeAlarm to the tray. Alarms keep firing while hidden."
                     : "Minimize to tray disabled. Closing the window will exit the app.",
@@ -1034,11 +1218,10 @@ namespace VibeAlarm.UI.Forms
 
             // ---- Custom background ----
             Label lblBgSection = CreateLabel("CUSTOM BACKGROUND", new Point(2, 510), new Size(400, 20), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblBgSection.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
-            ApplyLetterSpacing(lblBgSection);
+            lblBgSection.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             Label lblBgStatus = CreateLabel(string.IsNullOrEmpty(SettingsService.Load().BackgroundImagePath) ? "No custom background set." : "Custom background set.", new Point(0, 646), new Size(600, 20), 9F, FontStyle.Regular, MutedTextColor);
-            lblBgStatus.Font = VibeAlarmPalette.Mono(8.5F);
+            lblBgStatus.Font = VibeAlarmPalette.Body(9F);
 
             Guna2Button btnChooseBg = UIControlFactory.CreatePrimaryButton("Choose Image...", preset: currentTheme);
             btnChooseBg.Location = new Point(0, 542);
@@ -1071,6 +1254,9 @@ namespace VibeAlarm.UI.Forms
             Guna2Button btnRemoveBg = UIControlFactory.CreateSecondaryButton("Remove Background", preset: currentTheme);
             btnRemoveBg.Location = new Point(186, 542);
             btnRemoveBg.Size = new Size(170, 36);
+            btnRemoveBg.BorderThickness = 1;
+            btnRemoveBg.BorderColor = BorderColor;
+            btnRemoveBg.UseTransparentBackground = false;
             btnRemoveBg.Click += (_, _) =>
             {
                 BackgroundService.RemoveBackground();
@@ -1094,10 +1280,10 @@ namespace VibeAlarm.UI.Forms
                 SettingsService.Save(settings);
                 lblMonoState.Text = monoToggle.Checked ? "Monochrome Filter: On" : "Monochrome Filter: Off";
             };
-            lblBgStatus.Font = VibeAlarmPalette.Mono(8.5F);
+            lblBgStatus.Font = VibeAlarmPalette.Body(9F);
 
             Label lblSpecs = CreateLabel("VibeAlarm v1.5.0", new Point(2, 754), new Size(500, 22), 9F, FontStyle.Regular, MutedTextColor);
-            lblSpecs.Font = VibeAlarmPalette.Mono(8.5F);
+            lblSpecs.Font = VibeAlarmPalette.Body(9F);
             lblSpecs.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
 
             contentPanel.Controls.AddRange(new Control[] { lblSection, btnClearData, btnResetCompletion, btnOpenDataFolder, lblThemeSection, lblThemeDark, themeToggle, lblThemeLight, lblBehaviorSection, btnStartup, lblTraySection, btnTray, lblBgSection, btnChooseBg, btnRemoveBg, monoToggle, lblMonoState, lblBgStatus, lblSpecs });
@@ -1107,12 +1293,12 @@ namespace VibeAlarm.UI.Forms
         {
             UpdateGreetingContext();
 
-            Panel heroPanel = CreateCard(new Point(0, 4), new Size(970, 106), 4, CardBgColor, BorderColor);
+            Panel heroPanel = CreateCard(new Point(0, 4), new Size(970, 106), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             heroPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             Label title = CreateLabel("Ambient Soundscapes", new Point(24, 20), new Size(420, 28), 15F, FontStyle.Bold, TextColor);
             Label subtitle = CreateLabel("Play your own local focus audio offline while you study or work.", new Point(24, 52), new Size(700, 22), 10.5F, FontStyle.Regular, MutedTextColor);
             lblAmbientNowPlaying = CreateLabel(audioService.IsAmbientPlaying ? "Ambient audio playing" : "Nothing playing", new Point(24, 76), new Size(500, 20), 9.5F, FontStyle.Bold, TextColor);
-            lblAmbientNowPlaying.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
+            lblAmbientNowPlaying.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
 
             Button stopButton = CreateGhostButton("Stop Sound", new Point(820, 34), new Size(126, 36));
             stopButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -1122,7 +1308,7 @@ namespace VibeAlarm.UI.Forms
             Button importButton = CreatePrimaryButton("+  Add Local Sound", new Point(0, 132), new Size(170, 36));
             importButton.Click += (s, e) => ImportAndPlayAmbientFile();
 
-            Panel volumePanel = CreateCard(new Point(0, 202), new Size(970, 92), 4, CardBgColor, BorderColor);
+            Panel volumePanel = CreateCard(new Point(0, 202), new Size(970, 92), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             volumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             Label volumeTitle = CreateLabel("Sound Volume", new Point(24, 18), new Size(220, 24), 12F, FontStyle.Bold, TextColor);
             Label volumeHint = CreateLabel("Adjust the ambient sound level without changing your task alarms.", new Point(24, 46), new Size(440, 20), 9.5F, FontStyle.Regular, MutedTextColor);
@@ -1149,7 +1335,7 @@ namespace VibeAlarm.UI.Forms
             };
             volumePanel.Controls.AddRange(new Control[] { volumeTitle, volumeHint, ambientVolumeSlider, volumeValue });
 
-            Panel builtinPanel = CreateCard(new Point(0, 318), new Size(970, 150), 4, CardBgColor, BorderColor);
+            Panel builtinPanel = CreateCard(new Point(0, 318), new Size(970, 150), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             builtinPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             Label builtinTitle = CreateLabel("Offline Focus Sounds", new Point(24, 20), new Size(320, 24), 12F, FontStyle.Bold, TextColor);
             Label builtinText = CreateLabel("Synthesized offline loops to drown out background noise and boost productivity.", new Point(24, 48), new Size(760, 20), 9.5F, FontStyle.Regular, MutedTextColor);
@@ -1175,7 +1361,7 @@ namespace VibeAlarm.UI.Forms
 
         private Panel CreateCompactStatCard(string header, Color iconColor, out Label lblValue)
         {
-            Panel card = CreateCard(new Point(0, 0), new Size(264, 86), 2, CardBgColor, BorderColor);
+            Panel card = CreateCard(new Point(0, 0), new Size(264, 86), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             card.Margin = new Padding(0, 0, 12, 0);
 
             Panel iconBox = new Panel { Location = new Point(20, 20), Size = new Size(46, 46), BackColor = Color.Transparent };
@@ -1192,10 +1378,10 @@ namespace VibeAlarm.UI.Forms
                 using Pen hairline = new Pen(BorderColor, VibeAlarmPalette.Hairline);
                 e.Graphics.DrawRectangle(hairline, new Rectangle(0, 0, iconBox.Width - 1, iconBox.Height - 1));
             };
-            RoundControl(iconBox, 2);
+            RoundControl(iconBox, DesignTokens.Radius.Small);
 
             Label lblTitle = CreateLabel(header, new Point(84, 22), new Size(150, 22), 9F, FontStyle.Bold, MutedTextColor);
-            lblTitle.Font = VibeAlarmPalette.Mono(9F, FontStyle.Bold);
+            lblTitle.Font = VibeAlarmPalette.Body(9F, FontStyle.Bold);
             lblValue = CreateLabel("0", new Point(84, 46), new Size(120, 32), 20F, FontStyle.Bold, TextColor);
 
             card.Controls.AddRange(new Control[] { iconBox, lblTitle, lblValue });
@@ -1334,7 +1520,7 @@ namespace VibeAlarm.UI.Forms
         private Control BuildTaskRowCard(TaskItem item)
         {
             int rowWidth = GetListRowWidth();
-            Panel card = CreateCard(new Point(0, 0), new Size(rowWidth, 76), 2, CardBgColor, BorderColor);
+            Panel card = CreateCard(new Point(0, 0), new Size(rowWidth, 76), DesignTokens.Radius.Medium, CardBgColor, BorderColor);
             card.Margin = new Padding(0, 0, 0, 10);
 
             card.MouseEnter += (s, e) => { card.BackColor = CardHoverBg; card.Invalidate(); };
@@ -1376,12 +1562,11 @@ namespace VibeAlarm.UI.Forms
                 Text = item.Type.ToUpperInvariant(),
                 Location = new Point(0, 4),
                 Size = new Size(132, 18),
-                Font = VibeAlarmPalette.Mono(7.5F, FontStyle.Bold),
+                Font = VibeAlarmPalette.Body(8F, FontStyle.Bold),
                 ForeColor = TextColor,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleCenter
             };
-            ApplyLetterSpacing(lblBadgeText);
             badgePanel.Controls.Add(lblBadgeText);
             badgePanel.Paint += (s, e) =>
             {
@@ -1390,7 +1575,7 @@ namespace VibeAlarm.UI.Forms
                 Rectangle r = new Rectangle(0, 0, badgePanel.Width - 1, badgePanel.Height - 1);
                 e.Graphics.DrawRectangle(hairline, r);
             };
-            RoundControl(badgePanel, 2);
+            RoundControl(badgePanel, DesignTokens.Radius.Small);
 
             Guna2Button btnOptions = UIControlFactory.CreateIconButton("...", currentTheme);
             btnOptions.Location = new Point(optionsLeft, 20);
@@ -1510,16 +1695,16 @@ namespace VibeAlarm.UI.Forms
                 Location = loc,
                 Size = size,
                 FlatStyle = FlatStyle.Flat,
-                Font = VibeAlarmPalette.Mono(10F, FontStyle.Bold),
-                BackColor = TextColor,
-                ForeColor = currentTheme.IsLight ? VibeAlarmPalette.Surface : Color.Black,
+                Font = VibeAlarmPalette.Body(10F, FontStyle.Bold),
+                BackColor = AccentColor,
+                ForeColor = Color.White,
                 Cursor = Cursors.Hand
             };
             btn.FlatAppearance.BorderSize = 0;
-            // Consistent pressed state: the filled button darkens slightly on press.
-            btn.FlatAppearance.MouseDownBackColor = Shade(TextColor, 0.82F);
-            btn.FlatAppearance.MouseOverBackColor = Shade(TextColor, 1.08F);
-            RoundControl(btn, 2);
+            // Accent hover/press: light theme lightens, dark theme darkens toward the page.
+            btn.FlatAppearance.MouseDownBackColor = Shade(AccentColor, 0.82F);
+            btn.FlatAppearance.MouseOverBackColor = HoverAccent();
+            RoundControl(btn, DesignTokens.Radius.Small);
             return btn;
         }
 
@@ -1531,17 +1716,37 @@ namespace VibeAlarm.UI.Forms
                 Location = loc,
                 Size = size,
                 FlatStyle = FlatStyle.Flat,
-                Font = VibeAlarmPalette.Mono(9.5F),
+                Font = VibeAlarmPalette.Body(10F),
                 BackColor = Color.Transparent,
                 ForeColor = TextColor,
                 Cursor = Cursors.Hand
             };
-            btn.FlatAppearance.BorderSize = 1;
-            btn.FlatAppearance.BorderColor = BorderColor;
-            // Consistent hover/pressed: ghost fills with the card-hover shade, pressing deepens it.
+            btn.FlatAppearance.BorderSize = 0;
+            // §14.5 ghost: no border at rest, quiet fill on hover (Notion secondary button).
             btn.FlatAppearance.MouseOverBackColor = CardHoverBg;
             btn.FlatAppearance.MouseDownBackColor = Shade(CardHoverBg, 0.9F);
-            RoundControl(btn, 2);
+            RoundControl(btn, DesignTokens.Radius.Small);
+            return btn;
+        }
+
+        /// <summary>Status-bar action (SNOOZE / DISMISS). A bordered chip — quiet fill at rest,
+        /// hairline border so it reads as a button rather than a bare hyperlink (§15.2).</summary>
+        private Button CreateStatusActionButton(string text, Color ink)
+        {
+            Button btn = new Button
+            {
+                Text = text,
+                FlatStyle = FlatStyle.Flat,
+                Font = VibeAlarmPalette.Body(10F, FontStyle.Bold),
+                BackColor = Color.Transparent,
+                ForeColor = ink,
+                Cursor = Cursors.Hand
+            };
+            btn.FlatAppearance.BorderSize = 1;
+            btn.FlatAppearance.BorderColor = BorderColor;
+            btn.FlatAppearance.MouseOverBackColor = CardHoverBg;
+            btn.FlatAppearance.MouseDownBackColor = Shade(CardHoverBg, 0.9F);
+            RoundControl(btn, DesignTokens.Radius.Small);
             return btn;
         }
 
@@ -1553,6 +1758,16 @@ namespace VibeAlarm.UI.Forms
             int r = (int)Math.Clamp(color.R * factor, 0, 255);
             int g = (int)Math.Clamp(color.G * factor, 0, 255);
             int b = (int)Math.Clamp(color.B * factor, 0, 255);
+            return Color.FromArgb(r, g, b);
+        }
+
+        /// <summary>Accent hover, one tonal step off the §14 accent fill (matches factory primary).</summary>
+        private Color HoverAccent()
+        {
+            int step = currentTheme.IsLight ? 24 : 40;
+            int r = Math.Clamp(AccentColor.R + step, 0, 255);
+            int g = Math.Clamp(AccentColor.G + step, 0, 255);
+            int b = Math.Clamp(AccentColor.B + step, 0, 255);
             return Color.FromArgb(r, g, b);
         }
 
@@ -1807,7 +2022,6 @@ namespace VibeAlarm.UI.Forms
             BackColor = currentTheme.PrimaryBg;
             if (sidebarPanel != null) sidebarPanel.BackColor = currentTheme.SidebarBg;
             if (mainContainer != null) mainContainer.BackColor = currentTheme.PrimaryBg;
-            if (activeNavIndicator != null) activeNavIndicator.BackColor = currentTheme.AccentColor;
 
             // Update persistent header controls
             if (lblGreeting != null) lblGreeting.ForeColor = currentTheme.TextColor;
@@ -1821,9 +2035,11 @@ namespace VibeAlarm.UI.Forms
 
             if (btnNewTask != null)
             {
-                btnNewTask.BackColor = currentTheme.TextColor;
-                btnNewTask.ForeColor = currentTheme.IsLight ? VibeAlarmPalette.Surface : Color.Black;
-                btnNewTask.FlatAppearance.BorderColor = currentTheme.TextColor;
+                btnNewTask.BackColor = currentTheme.AccentColor;
+                btnNewTask.ForeColor = Color.White;
+                btnNewTask.FlatAppearance.BorderColor = currentTheme.AccentColor;
+                btnNewTask.FlatAppearance.MouseOverBackColor = HoverAccent();
+                btnNewTask.FlatAppearance.MouseDownBackColor = Shade(currentTheme.AccentColor, 0.82F);
             }
 
             // Update persistent sidebar controls
@@ -1843,19 +2059,18 @@ namespace VibeAlarm.UI.Forms
 
             if (sidebarProgressTrack != null)
             {
-                sidebarProgressTrack.BackColor = currentTheme.IsLight ? Color.FromArgb(220, 219, 215) : Color.FromArgb(40, 40, 40);
+                sidebarProgressTrack.BackColor = currentTheme.BorderColor;
             }
             if (sidebarProgressFill != null)
             {
                 sidebarProgressFill.BackColor = currentTheme.TextColor;
             }
 
-            Color hover = currentTheme.IsLight ? Color.FromArgb(235, 234, 230) : Color.FromArgb(24, 24, 24);
-            if (btnDashboard != null) btnDashboard.HoverState.FillColor = hover;
-            if (btnTasks != null) btnTasks.HoverState.FillColor = hover;
-            if (btnCalendar != null) btnCalendar.HoverState.FillColor = hover;
-            if (btnAmbient != null) btnAmbient.HoverState.FillColor = hover;
-            if (btnSettings != null) btnSettings.HoverState.FillColor = hover;
+            if (btnDashboard != null) btnDashboard.HoverState.FillColor = currentTheme.CardHoverBg;
+            if (btnTasks != null) btnTasks.HoverState.FillColor = currentTheme.CardHoverBg;
+            if (btnCalendar != null) btnCalendar.HoverState.FillColor = currentTheme.CardHoverBg;
+            if (btnAmbient != null) btnAmbient.HoverState.FillColor = currentTheme.CardHoverBg;
+            if (btnSettings != null) btnSettings.HoverState.FillColor = currentTheme.CardHoverBg;
 
             SettingsService.SaveThemeName(newTheme.Name);
 
@@ -1886,7 +2101,7 @@ namespace VibeAlarm.UI.Forms
             {
                 if (sender is not ComboBox combo || e.Index < 0) return;
                 bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-                using SolidBrush background = new SolidBrush(selected ? currentTheme.IsLight ? Color.FromArgb(235, 234, 230) : Color.FromArgb(40, 40, 40) : CardBgColor);
+                using SolidBrush background = new SolidBrush(selected ? CardHoverBg : CardBgColor);
                 using SolidBrush textBrush = new SolidBrush(TextColor);
                 e.Graphics.FillRectangle(background, e.Bounds);
                 e.Graphics.DrawString(combo.Items[e.Index]?.ToString() ?? string.Empty, combo.Font, textBrush, e.Bounds.X + 4, e.Bounds.Y + 3);

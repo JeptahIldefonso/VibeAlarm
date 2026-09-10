@@ -11,6 +11,7 @@ public sealed class ThemePreset
     public Color CardBgColor { get; set; }
     public Color CardHoverBg { get; set; }
     public Color AccentColor { get; set; }
+    public Color AccentTintColor { get; set; }
     public Color TextColor { get; set; }
     public Color MutedTextColor { get; set; }
     public Color BorderColor { get; set; }

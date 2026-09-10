@@ -22,17 +22,18 @@ namespace VibeAlarm.UI.Theming
         }
 
         /// <summary>
-        /// Border-radius policy. Near-flat by deliberate choice: the editorial/brutalist voice is
-        /// carried by typography and spacing, not by rounding. Default toward <see cref="None"/>;
-        /// <see cref="Small"/>/<see cref="Medium"/> exist only for large surfaces where a fully
-        /// sharp corner would read as a rendering bug rather than an aesthetic decision.
+        /// Border-radius policy (§14.2 Notion/Calendar hybrid). Rounded, soft elevation: controls
+        /// use an 8px radius, cards 12px. Zero remains only for elements that must be sharp (e.g.
+        /// hairline dividers), never as the default for interactive surfaces.
         /// </summary>
         public static class Radius
         {
-            /// <summary>Search input, technical toggles (SNOOZE/DISMISS), calendar cells.</summary>
+            /// <summary>Sharp — hairline rules, dividers, and other non-interactive edges.</summary>
             public const int None = 0;
-            public const int Small = 2;
-            public const int Medium = 4;
+            /// <summary>Controls — buttons, inputs, toggles, cells (§14.2 RadiusControl).</summary>
+            public const int Small = 8;
+            /// <summary>Cards and large surfaces (§14.2 RadiusCard).</summary>
+            public const int Medium = 12;
         }
 
         /// <summary>

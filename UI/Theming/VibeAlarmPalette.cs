@@ -46,7 +46,7 @@ namespace VibeAlarm.UI.Theming
 
         // ---- Geometry ----
         public const int Hairline = 1;
-        public const int RadiusMax = 8;
+        public const int RadiusMax = 12;
         public const int SidebarWidth = 220;
 
         // ---- Typography ----
