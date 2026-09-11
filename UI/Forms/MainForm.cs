@@ -9,6 +9,7 @@ using Guna.UI2.WinForms;
 using VibeAlarm.Models;
 using VibeAlarm.Services;
 using VibeAlarm.UI.Controls;
+using VibeAlarm.UI.Diagnostics;
 using VibeAlarm.UI.Theming;
 // 'Appearance' also names a WinForms ButtonBase enum — bind the bare name to the
 // theming accessor (settings-derived radii, density, task-row height).
@@ -40,6 +41,11 @@ namespace VibeAlarm.UI.Forms
         private string activeCalendarDay = DateTime.Now.DayOfWeek.ToString();
         private DateTime activeCalendarDate = DateTime.Today;
         private DateTime displayedCalendarMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+        /// <summary>Set when RenderCalendarView has just built the month grid, so the
+        /// RefreshDataCounters pass that immediately follows does not build the identical grid
+        /// a second time. Consumed (cleared) on read — a later data edit still rebuilds.</summary>
+        private bool calendarGridJustBuilt;
         private string activeView = "Tasks";
         private string searchFilterQuery = string.Empty;
 
@@ -185,6 +191,17 @@ namespace VibeAlarm.UI.Forms
             // Follow the Windows theme while the user is in "System" mode: re-resolve the
             // effective preset (and re-render) when the OS app theme preference flips.
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnOsPreferenceChanged;
+
+            // Perf harness (VIBEALARM_PERF=1 only): drives the two reported lag paths once
+            // the window is real, writes the timings, and exits. Inert in every normal run.
+            if (PerfProbe.Enabled)
+            {
+                this.Shown += (s, e) =>
+                {
+                    RunPerfBenchmark();
+                    Close();
+                };
+            }
         }
 
         /// <summary>OS theme (or other personalization) changed — re-resolve when in System mode.</summary>
@@ -528,7 +545,7 @@ namespace VibeAlarm.UI.Forms
             };
             headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            contentPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, DesignTokens.Spacing.Sm, 0, 0), BackColor = Color.Transparent, AutoScroll = true, AutoScrollMargin = new Size(0, DesignTokens.Spacing.Lg) };
+            contentPanel = new DoubleBufferedPanel { Dock = DockStyle.Fill, Padding = new Padding(0, DesignTokens.Spacing.Sm, 0, 0), BackColor = Color.Transparent, AutoScroll = true, AutoScrollMargin = new Size(0, DesignTokens.Spacing.Lg) };
             // Native scrollbar follows the active theme (dark mode = Windows' dark scrollbar,
             // light = default) — the persistent scroll host; view panels re-track on render.
             NativeScrollbarTheme.Track(contentPanel);
@@ -675,50 +692,73 @@ namespace VibeAlarm.UI.Forms
 
         private void RenderActiveView()
         {
-            contentPanel.SuspendLayout();
-            contentPanel.Controls.Clear();
-
-            Guna2Button targetBtn = activeView switch
+            using (PerfProbe.Phase("1 clear+dispose"))
             {
-                "Dashboard" => btnDashboard,
-                "Calendar" => btnCalendar,
-                "Ambient" => btnAmbient,
-                "Settings" => btnSettings,
-                _ => btnTasks
-            };
-
-            foreach (Guna2Button btn in new[] { btnDashboard, btnTasks, btnCalendar, btnAmbient, btnSettings })
-            {
-                bool isCurrent = btn == targetBtn;
-                if (btn.Tag is not string key)
-                {
-                    continue;
-                }
-                // §14.3 pill: active = accent-tinted fill + accent glyph/ink; idle = transparent.
-                btn.FillColor = isCurrent ? currentTheme.AccentTintColor : Color.Transparent;
-                btn.ForeColor = isCurrent ? currentTheme.TextColor : MutedTextColor;
-                // NOTE: the previous Image is NOT disposed — IconSet.Render now returns
-                // SHARED cached bitmaps (see IconSet.Render's ownership contract).
-                btn.Image = IconSet.Render(NavIcons[key], isCurrent ? currentTheme.AccentColor : MutedTextColor, 20);
+                contentPanel.SuspendLayout();
+                // Clear() would DETACH without disposing, stranding every child's USER handle until
+                // finalization. Measured: that exhausted the 10,000-handle per-process cap and
+                // crashed with Win32Exception "Error creating window handle" partway through a
+                // 25-switch run. Disposing the subtree holds USER flat at ~330.
+                DisposeViewSubtree(contentPanel);
             }
 
-            switch (activeView)
+            using (PerfProbe.Phase("2 nav pills"))
             {
-                case "Calendar":
-                    RenderCalendarView();
-                    break;
-                case "Dashboard":
-                    RenderDashboardView();
-                    break;
-                case "Ambient":
-                    RenderAmbientView();
-                    break;
-                case "Settings":
-                    RenderSettingsView();
-                    break;
-                default:
-                    RenderTaskView();
-                    break;
+                Guna2Button targetBtn = activeView switch
+                {
+                    "Dashboard" => btnDashboard,
+                    "Calendar" => btnCalendar,
+                    "Ambient" => btnAmbient,
+                    "Settings" => btnSettings,
+                    _ => btnTasks
+                };
+
+                foreach (Guna2Button btn in new[] { btnDashboard, btnTasks, btnCalendar, btnAmbient, btnSettings })
+                {
+                    bool isCurrent = btn == targetBtn;
+                    if (btn.Tag is not string key)
+                    {
+                        continue;
+                    }
+                    // §14.3 pill: active = accent-tinted fill + accent glyph/ink; idle = transparent.
+                    btn.FillColor = isCurrent ? currentTheme.AccentTintColor : Color.Transparent;
+                    btn.ForeColor = isCurrent ? currentTheme.TextColor : MutedTextColor;
+                    // NOTE: the previous Image is NOT disposed — IconSet.Render now returns
+                    // SHARED cached bitmaps (see IconSet.Render's ownership contract).
+                    btn.Image = IconSet.Render(NavIcons[key], isCurrent ? currentTheme.AccentColor : MutedTextColor, 20);
+                }
+            }
+
+            // Calendar's root is Dock=Fill with PERCENT rows — it is sized to fit the viewport
+            // exactly, and the one part of it that can overflow (calendarListPanel) scrolls
+            // itself. Leaving the outer AutoScroll on made those two rules contradict: AutoScroll
+            // needs the content size to decide whether a scrollbar is needed, the percent rows
+            // need the client size (which the scrollbar changes) to divide up, so the whole
+            // 49-cell grid was re-resolved on every pass. Measured: Calendar 1785 -> 901 ms when
+            // the percent styles were taken out of that cycle. Every other view roots a Dock=Top
+            // AutoSize list or a Fill flow that genuinely does overflow, so they keep scrolling.
+            contentPanel.AutoScroll = activeView != "Calendar";
+
+            using (PerfProbe.Phase("3 build " + activeView))
+            {
+                switch (activeView)
+                {
+                    case "Calendar":
+                        RenderCalendarView();
+                        break;
+                    case "Dashboard":
+                        RenderDashboardView();
+                        break;
+                    case "Ambient":
+                        RenderAmbientView();
+                        break;
+                    case "Settings":
+                        RenderSettingsView();
+                        break;
+                    default:
+                        RenderTaskView();
+                        break;
+                }
             }
 
             // The Tasks view replaces the header's "New Task" button with the floating
@@ -739,9 +779,62 @@ namespace VibeAlarm.UI.Forms
                 btnNewTask.Visible = !tasksViewActive;
             }
 
-            contentPanel.ResumeLayout();
-            RefreshDataCounters();
-            PersistNavigationState();
+            using (PerfProbe.Phase("4 ResumeLayout"))
+            {
+                contentPanel.ResumeLayout();
+            }
+            using (PerfProbe.Phase("5 RefreshDataCounters"))
+            {
+                RefreshDataCounters();
+            }
+            using (PerfProbe.Phase("6 PersistNavigationState"))
+            {
+                PersistNavigationState();
+            }
+        }
+
+        /// <summary>Detaches AND disposes every child of a view host.
+        ///
+        /// ControlCollection.Clear() only DETACHES: each removed control keeps its USER
+        /// handle until finalization, and its owning field (taskListPanel, calendarListPanel,
+        /// dashboardFocusPanel, dashboardUpcomingPanel) keeps reporting IsDisposed == false —
+        /// so RefreshDataCounters kept rebuilding every non-visible view on every tab switch.
+        /// Measured on a 40-task list: ~480 stranded USER handles per switch, hitting the
+        /// per-process 10,000 cap (Win32 1158) after roughly 20 switches. Disposing here is
+        /// what the IsDisposed guards downstream were always written to expect.</summary>
+        /// <summary>Batches one container's layout across a bulk Controls.Add loop.
+        ///
+        /// WinForms runs a FULL layout pass per Add. Measured, with the row/cell construction
+        /// timed separately: building a control is free (0.02 ms per calendar cell, 0.48 ms per
+        /// task row) and the entire cost is the insert — 17.7 ms per cell on the calendar's
+        /// TableLayoutPanel (49 cells = 1.9 s of a 3.3 s tab switch) and 4.9 ms per row on the
+        /// task FlowLayoutPanel. The cost is O(n) per add, so it grows quadratically with the
+        /// list; suspending collapses n layout passes into one.
+        ///
+        /// A using-declaration (not a block) so early returns inside a bind method still resume
+        /// layout — the hand-rolled Suspend/Resume pairs it replaces had to repeat the Resume in
+        /// every exit path.</summary>
+        private readonly struct LayoutBatch : IDisposable
+        {
+            private readonly Control? host;
+
+            internal LayoutBatch(Control host)
+            {
+                this.host = host;
+                host.SuspendLayout();
+            }
+
+            public void Dispose() => host?.ResumeLayout(true);
+        }
+
+        private static void DisposeViewSubtree(Control host)
+        {
+            for (int i = host.Controls.Count - 1; i >= 0; i--)
+            {
+                Control child = host.Controls[i];
+                host.Controls.RemoveAt(i);
+                child.Dispose();
+            }
         }
 
         private void PersistNavigationState()
@@ -765,7 +858,7 @@ namespace VibeAlarm.UI.Forms
 
             // §11: the user primarily sees their tasks — no dashboard statistics here. Section
             // headings and cards are appended by BindTaskListView into one scrollable flow.
-            taskListPanel = new FlowLayoutPanel
+            taskListPanel = new DoubleBufferedFlowPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
@@ -808,11 +901,40 @@ namespace VibeAlarm.UI.Forms
         /// <summary>Keeps full-width rows (section headings, task cards) expanding with the
         /// window: FlowLayoutPanel children keep their own width, so each resize re-clamps every
         /// child to the host's client width. Cheap — no rebuilds.</summary>
+        /// <summary>Row width that does not depend on whether the scrollbar is currently
+        /// showing — which is what made this an infinite feedback loop.
+        ///
+        /// Measured: the host reported ClientSize 996 with no scrollbar and 979 with one, and
+        /// subtracting the scrollbar from EITHER meant double-subtracting in the second case.
+        /// Rows were sized 977, which made the scrollbar appear, which resized them to 960,
+        /// which removed it, which resized them to 977 — 6.5 resize passes per tab switch,
+        /// each rewriting every row, costing ~710 ms per Tasks switch.
+        ///
+        /// Reserving the scrollbar's width unconditionally against the scrolling ancestor's
+        /// OUTER width gives one fixed target (979 here) in both states, so the loop settles
+        /// on the first pass and the guard below skips every later one.</summary>
+        private static int StableRowWidth(Control host)
+        {
+            Control? scrollHost = host;
+            while (scrollHost != null && scrollHost is not ScrollableControl { AutoScroll: true })
+            {
+                scrollHost = scrollHost.Parent;
+            }
+            // Outer Width, not ClientSize: ClientSize already has the scrollbar subtracted when
+            // one is visible, and that state is exactly what must not feed back in here.
+            int outer = scrollHost?.Width ?? host.ClientSize.Width;
+            return outer - SystemInformation.VerticalScrollBarWidth - 2;
+        }
+
         private static void BindRowWidthToHost(FlowLayoutPanel host)
         {
             host.Resize += (s, e) =>
             {
-                int width = host.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 2;
+                // NOT batched with SuspendLayout: measured, that made things WORSE. Suspending
+                // here cut the resize-event count 222 -> 102 but pushed the deferred work into
+                // contentPanel.ResumeLayout (total 5229 -> 6837 ms), for no net gain.
+                using PerfProbe.PhaseScope scope = PerfProbe.Phase("R row-width resize");
+                int width = StableRowWidth(host);
                 foreach (Control row in host.Controls)
                 {
                     // AutoSize inner flows (WrapContents off) manage their own width — leave them alone.
@@ -820,9 +942,15 @@ namespace VibeAlarm.UI.Forms
                     {
                         continue;
                     }
-                    if (row.Width != width)
+                    // Compare against the value actually ASSIGNED. This used to test
+                    // `row.Width != width` while assigning `width - row.Margin.Horizontal`, so
+                    // for any row with horizontal margin the two could never be equal: the
+                    // guard never held and every row was rewritten on every resize event
+                    // (~6.5 events per tab switch), each write re-laying-out the live host.
+                    int target = Math.Max(320, width - row.Margin.Horizontal);
+                    if (row.Width != target)
                     {
-                        row.Width = Math.Max(320, width - row.Margin.Horizontal);
+                        row.Width = target;
                     }
                 }
             };
@@ -1016,7 +1144,11 @@ namespace VibeAlarm.UI.Forms
             for (int i = 0; i < 6; i++)
                 calendarStripMatrix.RowStyles.Add(new RowStyle(SizeType.Percent, 15.67F));
 
+
+            // Built while calendarStripMatrix is still UNPARENTED: 49 cells for ~0.1 ms,
+            // because no window handles exist yet. Once docked, the same rebuild costs ~1050 ms.
             RebuildCalendarMonthGrid();
+            calendarGridJustBuilt = true;
             calendarLayout.Controls.Add(calendarStripMatrix, 0, 2);
 
             // ---- Selected-day summary row: day title + progress left, Add-task action and
@@ -1064,7 +1196,7 @@ namespace VibeAlarm.UI.Forms
             calendarLayout.Controls.Add(actionRow, 0, 3);
 
             // ---- Selected day's task list ----
-            calendarListPanel = new FlowLayoutPanel
+            calendarListPanel = new DoubleBufferedFlowPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
@@ -1083,7 +1215,10 @@ namespace VibeAlarm.UI.Forms
 
         private void RebuildCalendarMonthGrid()
         {
-            calendarStripMatrix.Controls.Clear();
+            using LayoutBatch batch = new(calendarStripMatrix);
+            // Same defect Fix A addressed on contentPanel: Clear() detaches without disposing,
+            // stranding 49 USER handles per rebuild.
+            DisposeViewSubtree(calendarStripMatrix);
 
             for (int i = 0; i < WeekDays.Length; i++)
             {
@@ -1102,7 +1237,9 @@ namespace VibeAlarm.UI.Forms
                 for (int col = 0; col < 7; col++)
                 {
                     DateTime currentDate = gridDate;
-                    calendarStripMatrix.Controls.Add(BuildCalendarDayCell(currentDate), col, row);
+                    Control dayCell;
+                    using (PerfProbe.Phase("5c-i BuildCalendarDayCell")) { dayCell = BuildCalendarDayCell(currentDate); }
+                    using (PerfProbe.Phase("5c-ii TLP.Controls.Add")) { calendarStripMatrix.Controls.Add(dayCell, col, row); }
                     gridDate = gridDate.AddDays(1);
                 }
             }
@@ -1260,7 +1397,7 @@ namespace VibeAlarm.UI.Forms
 
             // §16: dashboard = practical overview, not metric cards. One compact info row,
             // then TODAY and UPCOMING lists — all in a single scrollable flow.
-            FlowLayoutPanel dashboardFlow = new FlowLayoutPanel
+            FlowLayoutPanel dashboardFlow = new DoubleBufferedFlowPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
@@ -1296,7 +1433,7 @@ namespace VibeAlarm.UI.Forms
 
             // ---- TODAY list ----
             dashboardFlow.Controls.Add(CreateSectionHeading("TODAY", activeToday));
-            dashboardFocusPanel = new FlowLayoutPanel
+            dashboardFocusPanel = new DoubleBufferedFlowPanel
             {
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
@@ -1310,7 +1447,7 @@ namespace VibeAlarm.UI.Forms
             // ---- UPCOMING list (next few beyond today) ----
             int upcomingCount = masterTaskList.Count(t => IsActiveTask(t) && GetTaskDate(t).Date > DateTime.Today);
             dashboardFlow.Controls.Add(CreateSectionHeading("UPCOMING", upcomingCount));
-            dashboardUpcomingPanel = new FlowLayoutPanel
+            dashboardUpcomingPanel = new DoubleBufferedFlowPanel
             {
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
@@ -1383,7 +1520,7 @@ namespace VibeAlarm.UI.Forms
 
             // Same content, rebuilt on layout containers (§5): hero, import action, volume card,
             // built-in sounds card — one scrollable flow, no Point(x,y) positioning.
-            FlowLayoutPanel ambientFlow = new FlowLayoutPanel
+            FlowLayoutPanel ambientFlow = new DoubleBufferedFlowPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
@@ -1664,21 +1801,32 @@ namespace VibeAlarm.UI.Forms
                 RoundControl(sidebarProgressFill, 5);
             }
 
-            if (taskListPanel != null && !taskListPanel.IsDisposed) BindTaskListView();
+            if (taskListPanel != null && !taskListPanel.IsDisposed) { using (PerfProbe.Phase("5a BindTaskListView")) { BindTaskListView(); } }
             if (calendarListPanel != null && !calendarListPanel.IsDisposed)
             {
-                BindCalendarView();
+                using (PerfProbe.Phase("5b BindCalendarView")) { BindCalendarView(); }
                 // Live-sync the month-grid day badges on the same data edges (task added/fired/
                 // expired). Gated to the active Calendar tab and grid existence so this runs only
                 // on real state changes, not on per-second/minte ticks.
                 if (activeView == "Calendar" && calendarStripMatrix != null && !calendarStripMatrix.IsDisposed)
                 {
-                    RebuildCalendarMonthGrid();
+                    // Skip when RenderCalendarView just built this exact grid: nothing between
+                    // the two calls mutates displayedCalendarMonth, activeCalendarDate or the
+                    // task list, so the second pass rebuilt 49 identical cells for ~1050 ms.
+                    // A data edge with Calendar already open still lands in the else branch.
+                    if (calendarGridJustBuilt)
+                    {
+                        calendarGridJustBuilt = false;
+                    }
+                    else
+                    {
+                        using (PerfProbe.Phase("5c RebuildCalendarMonthGrid")) { RebuildCalendarMonthGrid(); }
+                    }
                 }
             }
-            if (dashboardFocusPanel != null && !dashboardFocusPanel.IsDisposed) BindDashboardFocusView();
-            if (dashboardUpcomingPanel != null && !dashboardUpcomingPanel.IsDisposed) BindDashboardUpcomingView();
-            TaskStorageService.Save(masterTaskList);
+            if (dashboardFocusPanel != null && !dashboardFocusPanel.IsDisposed) { using (PerfProbe.Phase("5d BindDashboardFocus")) { BindDashboardFocusView(); } }
+            if (dashboardUpcomingPanel != null && !dashboardUpcomingPanel.IsDisposed) { using (PerfProbe.Phase("5e BindDashboardUpcoming")) { BindDashboardUpcomingView(); } }
+            using (PerfProbe.Phase("5f TaskStorage.Save")) { TaskStorageService.Save(masterTaskList); }
         }
 
         private IEnumerable<TaskItem> GetFilteredTasks(IEnumerable<TaskItem> SourceList)
@@ -1703,14 +1851,13 @@ namespace VibeAlarm.UI.Forms
         /// count. Completed tasks stay in place inside their section (§12: don't hide history).</summary>
         private void BindTaskListView()
         {
-            taskListPanel.SuspendLayout();
+            using LayoutBatch batch = new(taskListPanel);
             taskListPanel.Controls.Clear();
             var filtered = GetFilteredTasks(masterTaskList).ToList();
 
             if (!filtered.Any())
             {
                 taskListPanel.Controls.Add(CreateEmptyStateRow("No tasks found.", "Try a different search or add a new task."));
-                taskListPanel.ResumeLayout();
                 return;
             }
 
@@ -1723,7 +1870,9 @@ namespace VibeAlarm.UI.Forms
                 taskListPanel.Controls.Add(CreateSectionHeading("TODAY", today.Count));
                 foreach (TaskItem task in today)
                 {
-                    taskListPanel.Controls.Add(BuildTaskRowCard(task));
+                    Control builtRow;
+                    using (PerfProbe.Phase("5a-i BuildTaskRowCard")) { builtRow = BuildTaskRowCard(task); }
+                    using (PerfProbe.Phase("5a-ii FLP.Controls.Add")) { taskListPanel.Controls.Add(builtRow); }
                 }
             }
 
@@ -1732,7 +1881,9 @@ namespace VibeAlarm.UI.Forms
                 taskListPanel.Controls.Add(CreateSectionHeading("UPCOMING", upcoming.Count));
                 foreach (TaskItem task in upcoming)
                 {
-                    taskListPanel.Controls.Add(BuildTaskRowCard(task));
+                    Control builtRow;
+                    using (PerfProbe.Phase("5a-i BuildTaskRowCard")) { builtRow = BuildTaskRowCard(task); }
+                    using (PerfProbe.Phase("5a-ii FLP.Controls.Add")) { taskListPanel.Controls.Add(builtRow); }
                 }
             }
 
@@ -1741,11 +1892,11 @@ namespace VibeAlarm.UI.Forms
                 taskListPanel.Controls.Add(CreateEmptyStateRow("Nothing scheduled yet.", "Create your first task to get started."));
             }
 
-            taskListPanel.ResumeLayout();
         }
 
         private void BindCalendarView()
         {
+            using LayoutBatch batch = new(calendarListPanel);
             calendarListPanel.Controls.Clear();
             activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
             var items = GetFilteredTasks(masterTaskList.Where(t => GetTaskDate(t).Date == activeCalendarDate.Date)).ToList();
@@ -1781,6 +1932,7 @@ namespace VibeAlarm.UI.Forms
 
         private void BindDashboardFocusView()
         {
+            using LayoutBatch batch = new(dashboardFocusPanel);
             dashboardFocusPanel.Controls.Clear();
             var remainingItems = GetFilteredTasks(masterTaskList.Where(t => GetTaskDate(t).Date == DateTime.Today && IsActiveTask(t))).ToList();
 
@@ -1799,6 +1951,7 @@ namespace VibeAlarm.UI.Forms
         /// <summary>Dashboard UPCOMING: the next few active tasks beyond today, soonest first.</summary>
         private void BindDashboardUpcomingView()
         {
+            using LayoutBatch batch = new(dashboardUpcomingPanel);
             dashboardUpcomingPanel.Controls.Clear();
             var upcoming = GetFilteredTasks(masterTaskList.Where(t => GetTaskDate(t).Date > DateTime.Today && IsActiveTask(t)))
                 .OrderBy(GetTaskDate).ThenBy(t => t.RemindTime)
@@ -2170,8 +2323,11 @@ namespace VibeAlarm.UI.Forms
                 host = dashboardUpcomingPanel;
             }
 
-            int availableWidth = host?.ClientSize.Width > 0 ? host.ClientSize.Width : contentPanel.ClientSize.Width;
-            return Math.Max(620, availableWidth - 24);
+            // Same scrollbar-independent width the resize handler targets (see StableRowWidth):
+            // building a row at a different width than the handler wants guarantees one full
+            // rewrite of every row on the very next resize.
+            int availableWidth = StableRowWidth(host ?? (Control)contentPanel);
+            return Math.Max(620, availableWidth);
         }
 
         private void ImportAndPlayAmbientFile()
