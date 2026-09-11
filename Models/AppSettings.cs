@@ -20,8 +20,10 @@ namespace VibeAlarm.Models
         /// <summary>Absolute path of a user-chosen background image, or empty for the flat preset color.</summary>
         public string BackgroundImagePath { get; set; } = string.Empty;
 
-        /// <summary>0.0–1.0 opacity applied to the background image layer.</summary>
-        public double BackgroundOpacity { get; set; } = 1.0;
+        /// <summary>0.0–1.0 opacity applied to the background image layer. Default ~0.22: the
+        /// image is an atmospheric texture blended over the theme-colored form background, not
+        /// a full-strength photo — roughly an 80% scrim keeps text comfortable everywhere.</summary>
+        public double BackgroundOpacity { get; set; } = 0.22;
 
         /// <summary>Last active navigation view name, so returning to the app doesn't reset nav.</summary>
         public string LastActiveView { get; set; } = "Tasks";

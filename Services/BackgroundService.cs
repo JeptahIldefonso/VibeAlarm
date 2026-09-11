@@ -74,23 +74,50 @@ namespace VibeAlarm.Services
         }
 
         /// <summary>
-        /// Loads the stored background, optionally desaturated, with the user's opacity applied
-        /// (0 = fully transparent image, 1 = fully visible), so foreground text stays legible.
-        /// Returns null when no image is present.
+        /// Loads the background as an ATMOSPHERIC layer: downscaled to a sane render size,
+        /// blurred (downscale → high-quality upscale — the standard cheap gaussian
+        /// approximation, so the image reads as texture instead of a competing sharp
+        /// visual), optionally desaturated, with the user's opacity applied as a global
+        /// alpha (0 = fully transparent image, 1 = fully visible). The opacity is the
+        /// readability lever: the image blends over the form's theme-colored BackColor, so
+        /// low values keep every text element comfortable while the background stays
+        /// intentional. Returns null when no image is present.
         /// </summary>
-        public static Bitmap? LoadBackground(bool applyMonochromeFilter, double opacity)
+        /// <param name="path">Overrides the stored image (used by tests so they never touch
+        /// the user's real persisted background).</param>
+        public static Bitmap? LoadBackground(bool applyMonochromeFilter, double opacity, string? path = null)
         {
             try
             {
-                string path = StoredPath;
-                if (!File.Exists(path))
+                string image = path ?? StoredPath;
+                if (!File.Exists(image))
                 {
                     return null;
                 }
 
+                using var original = new Bitmap(image);
+
+                // A blurred background never needs full source resolution — a 4K source
+                // serving a blur is wasted memory and paint time. Render at most
+                // MaxRenderedEdge px on the long edge.
+                const int MaxRenderedEdge = 1600;
+                double fit = Math.Min(1.0, (double)MaxRenderedEdge / Math.Max(original.Width, original.Height));
+                int targetW = Math.Max(1, (int)Math.Round(original.Width * fit));
+                int targetH = Math.Max(1, (int)Math.Round(original.Height * fit));
+
+                // Blur: shrink to a 1/8 thumbnail, then draw it back up to the target size —
+                // the upscale softens all detail. One extra DrawImage, no per-pixel loops.
+                int thumbW = Math.Max(1, targetW / 8);
+                int thumbH = Math.Max(1, targetH / 8);
+                using var thumb = new Bitmap(thumbW, thumbH);
+                using (var tg = Graphics.FromImage(thumb))
+                {
+                    tg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    tg.DrawImage(original, 0, 0, thumbW, thumbH);
+                }
+
                 // One combined color matrix: optional desaturation + scrim, then the user's
-                // opacity as a global alpha (row 4). At opacity 1 the output is identical to
-                // the previous fixed-full-opacity render.
+                // opacity as a global alpha (row 4).
                 float a = (float)Math.Clamp(opacity, 0.0, 1.0);
                 float[][] matrix = applyMonochromeFilter
                     ? new float[][]
@@ -110,8 +137,7 @@ namespace VibeAlarm.Services
                         new float[] {0,0,0,0,1}
                     };
 
-                using var original = new Bitmap(path);
-                var result = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
+                var result = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
                 using (var attr = new ImageAttributes())
                 {
                     attr.SetColorMatrix(new ColorMatrix(matrix));
@@ -119,8 +145,8 @@ namespace VibeAlarm.Services
                     g.Clear(Color.Transparent);
                     g.SmoothingMode = SmoothingMode.HighQuality;
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(original, new Rectangle(0, 0, result.Width, result.Height),
-                        0, 0, result.Width, result.Height, GraphicsUnit.Pixel, attr);
+                    g.DrawImage(thumb, new Rectangle(0, 0, targetW, targetH),
+                        0, 0, thumbW, thumbH, GraphicsUnit.Pixel, attr);
                 }
 
                 return result;

@@ -1,5 +1,4 @@
 using System.Drawing;
-using VibeAlarm.Models;
 using VibeAlarm.Services;
 using VibeAlarm.UI.Theming;
 using Xunit;
@@ -66,22 +65,21 @@ namespace VibeAlarm.Tests
         }
 
         [Fact]
-        public void Effective_tokens_stay_opaque_at_zero_transparency()
+        public void Effective_tokens_use_the_locked_design_percentages()
         {
+            // The former Settings sliders are gone — these alphas are now design constants.
+            // Cards sit opaque on the background, borders stay quiet, panels are barely
+            // glassy, and the sidebar is the one true glass surface.
             var preset = ThemeService.Shared.FindByName("Dark")!;
-            var settings = new AppSettings
-            {
-                GlassTransparency = 0,
-                PanelTransparency = 0,
-                CardTransparency = 0,
-                BorderTransparency = 0
-            };
 
-            Assert.Equal(255, GlassSurface.CardFill(preset, settings).A);
-            Assert.Equal(255, GlassSurface.PanelFill(preset, settings).A);
-            Assert.Equal(255, GlassSurface.SidebarFill(preset, settings).A);
-            Assert.Equal(preset.CardBgColor, GlassSurface.CardFill(preset, settings));
-            Assert.Equal(preset.SidebarBg, GlassSurface.SidebarFill(preset, settings));
+            Assert.Equal(255, GlassSurface.CardFill(preset).A);
+            Assert.Equal(GlassSurface.AlphaFromPercent(27, GlassSurface.BorderMinAlpha), GlassSurface.CardBorder(preset).A);
+            Assert.Equal(GlassSurface.AlphaFromPercent(8, GlassSurface.PanelMinAlpha), GlassSurface.PanelFill(preset).A);
+            Assert.Equal(GlassSurface.SidebarMinAlpha, GlassSurface.SidebarFill(preset).A);
+
+            // RGB channels always come from the preset untouched.
+            Assert.Equal(Color.FromArgb(255, preset.CardBgColor), GlassSurface.CardFill(preset));
+            Assert.Equal(Color.FromArgb(GlassSurface.SidebarMinAlpha, preset.SidebarBg), GlassSurface.SidebarFill(preset));
         }
 
         [Fact]

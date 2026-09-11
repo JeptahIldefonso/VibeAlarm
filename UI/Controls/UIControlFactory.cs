@@ -125,37 +125,68 @@ namespace VibeAlarm.UI.Controls
             return box;
         }
 
-        /// <summary>Dropdown. Dark/monochrome, readable popup, visible selected/hover states.</summary>
-        public static Guna2ComboBox CreateDropdown(
+        /// <summary>Dropdown. NATIVE ComboBox, not Guna2ComboBox: Guna's dropdown popup is an
+        /// internal ToolStripDropDownMenu sized to ALL items — v2.0.4.8 exposes no
+        /// MaxDropDownItems/DropDownHeight/height cap of any name (assembly-metadata
+        /// verified), so a 60-item minute list rendered as an unbounded strip and its custom
+        /// item drawing truncated short strings to "…". The native combo caps the popup at
+        /// <paramref name="maxVisibleItems"/> rows with real internal scrolling and renders
+        /// item text itself; owner-draw keeps every surface on the preset's tokens.</summary>
+        public static ComboBox CreateDropdown(
             string[] items,
             int selectedIndex = -1,
             ThemePreset? preset = null,
-            bool enabled = true)
+            bool enabled = true,
+            int maxVisibleItems = 8)
         {
             var p = preset ?? Active();
-            Guna2ComboBox combo = new Guna2ComboBox
+            ComboBox combo = new ComboBox
             {
-                FillColor = p.CardBgColor,
-                ForeColor = p.TextColor,
-                BorderColor = p.BorderColor,
-                BorderThickness = 1,
-                BorderRadius = DesignTokens.Radius.Small,
-                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize),
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                StartIndex = selectedIndex,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = p.CardBgColor,
+                ForeColor = p.TextColor,
+                Font = DesignTokens.Typography.Body(DesignTokens.Typography.FieldSize),
+                MaxDropDownItems = maxVisibleItems,
+                DrawMode = DrawMode.OwnerDrawFixed,
                 Cursor = Cursors.Hand,
                 Enabled = enabled
             };
-            combo.FocusedState.BorderColor = p.TextColor;
-            combo.HoverState.BorderColor = Mix(p.TextColor, p.BorderColor);
-            combo.ItemsAppearance.BackColor = p.SurfaceElevated;
-            combo.ItemsAppearance.ForeColor = p.TextColor;
-            combo.ItemsAppearance.SelectedBackColor = p.SelectedColor;
-            combo.ItemsAppearance.SelectedForeColor = p.SelectedTextColor;
+
+            // Owner-draw paints BOTH the collapsed field and every list row from the preset:
+            // selected row uses the Selected/SelectedText tokens, the rest SurfaceElevated
+            // with primary ink. No focus rectangle (the flat border already shows focus).
+            combo.DrawItem += (s, e) =>
+            {
+                if (e.Index < 0)
+                {
+                    return;
+                }
+
+                bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+                using SolidBrush back = new SolidBrush(selected ? p.SelectedColor : p.SurfaceElevated);
+                e.Graphics.FillRectangle(back, e.Bounds);
+                string text = combo.Items[e.Index]?.ToString() ?? string.Empty;
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    text,
+                    e.Font,
+                    e.Bounds,
+                    selected ? p.SelectedTextColor : p.TextColor,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.LeftAndRightPadding);
+            };
+
             foreach (string it in items)
             {
                 combo.Items.Add(it);
             }
+            if (selectedIndex >= 0 && selectedIndex < items.Length)
+            {
+                combo.SelectedIndex = selectedIndex;
+            }
+
+            // Dropdown scrollbar/arrow chrome follows the theme (dark mode on Win10 1809+).
+            NativeScrollbarTheme.TrackComboBox(combo);
             return combo;
         }
 

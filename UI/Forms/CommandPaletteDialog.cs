@@ -68,11 +68,14 @@ namespace VibeAlarm.UI.Forms
 
         private void InitializeCanvas()
         {
+            // Same source the control factory reads — the palette must match the running theme.
+            ThemePreset preset = ThemeService.Shared.Current ?? ThemeService.Shared.Default;
+
             Text = "Quick Switch";
             ClientSize = new Size(520, 280);
             FormBorderStyle = FormBorderStyle.FixedToolWindow;
             StartPosition = FormStartPosition.CenterParent;
-            BackColor = VibeAlarmPalette.Surface;
+            BackColor = preset.SurfaceElevated;
             Font = VibeAlarmPalette.Body(10F);
             KeyPreview = true;
 
@@ -82,7 +85,7 @@ namespace VibeAlarm.UI.Forms
                 Location = new Point(24, 18),
                 Size = new Size(200, 24),
                 Font = VibeAlarmPalette.Display(15F, FontStyle.Bold),
-                ForeColor = VibeAlarmPalette.TextPrimary,
+                ForeColor = preset.TextColor,
                 BackColor = Color.Transparent
             };
             Controls.Add(lblAppLogo);
@@ -93,8 +96,8 @@ namespace VibeAlarm.UI.Forms
                 Size = new Size(472, 32),
                 Font = VibeAlarmPalette.Body(12F),
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = VibeAlarmPalette.Background,
-                ForeColor = VibeAlarmPalette.TextPrimary,
+                BackColor = preset.CardBgColor,
+                ForeColor = preset.TextColor,
                 Text = ""
             };
             txtInput.TextChanged += (_, _) => RebuildResults();
@@ -105,14 +108,16 @@ namespace VibeAlarm.UI.Forms
                 Location = new Point(24, 94),
                 Size = new Size(472, 168),
                 Font = VibeAlarmPalette.Body(10F),
-                BackColor = VibeAlarmPalette.Background,
-                ForeColor = VibeAlarmPalette.TextPrimary,
+                BackColor = preset.CardBgColor,
+                ForeColor = preset.TextColor,
                 BorderStyle = BorderStyle.None,
                 IntegralHeight = false
             };
             lstResults.SelectedIndexChanged += (_, _) => { };
             lstResults.DoubleClick += (_, _) => AcceptSelection();
             Controls.Add(lstResults);
+            // The list's native scrollbar follows the active theme like every other scroller.
+            NativeScrollbarTheme.Track(lstResults);
 
             KeyDown += (_, e) =>
             {

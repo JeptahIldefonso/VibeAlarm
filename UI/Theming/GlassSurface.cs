@@ -4,14 +4,15 @@ using VibeAlarm.Models;
 namespace VibeAlarm.UI.Theming
 {
     /// <summary>
-    /// The ONLY place transparency math lives (§23–24 of the orientation redesign). User-facing
-    /// transparency is a friendly 0–100% where 0% = completely opaque and 100% = maximum
+    /// The ONLY place transparency math lives (§23–24 of the orientation redesign). Transparency
+    /// is expressed as a friendly 0–100% where 0% = completely opaque and 100% = maximum
     /// transparency; internally each percentage maps to an alpha channel, clamped to a
-    /// per-surface safe minimum so the UI can never become unreadable — the slider still shows
-    /// the user's chosen percentage even when the visual alpha is floored.
+    /// per-surface safe minimum so the UI can never become unreadable.
     ///
-    /// Effective colors are computed from the active <see cref="ThemePreset"/> plus the
-    /// persisted appearance settings; no form or factory may compute its own ARGB surface.
+    /// The percentages are now HARDCODED design constants (tuned against the blurred background
+    /// and locked when the Settings sliders were removed) — effective colors are computed from
+    /// the active <see cref="ThemePreset"/> alone; no form or factory may compute its own ARGB
+    /// surface.
     /// </summary>
     public static class GlassSurface
     {
@@ -21,6 +22,14 @@ namespace VibeAlarm.UI.Theming
         public const int PanelMinAlpha = 77;     // ~30%
         public const int BorderMinAlpha = 51;    // ~20%
         public const int SidebarMinAlpha = 128;  // ~50%
+
+        // Locked transparency percentages (formerly the Settings sliders). These match the
+        // values the interface was tuned against before the sliders were removed, so the
+        // removal was a no-visible-change cleanup.
+        private const int CardTransparencyPct = 0;    // cards sit opaque on the background
+        private const int BorderTransparencyPct = 27; // hairline borders stay quiet
+        private const int PanelTransparencyPct = 8;   // raised panels are barely glassy
+        private const int SidebarTransparencyPct = 50; // the nav rail is the one true glass
 
         /// <summary>Converts a 0–100 transparency percentage into an alpha channel value.
         /// 0% → 255 (opaque); 100% → <paramref name="minAlpha"/> (the most transparent the
@@ -34,27 +43,27 @@ namespace VibeAlarm.UI.Theming
         }
 
         /// <summary>Applies transparency to a base color. The RGB channels are never touched —
-        /// only the alpha channel changes, so a theme's hue survives any slider position.</summary>
+        /// only the alpha channel changes, so a theme's hue survives any percentage.</summary>
         public static Color Apply(Color baseColor, int transparencyPct, int minAlpha)
             => Color.FromArgb(AlphaFromPercent(transparencyPct, minAlpha), baseColor);
 
         // ---- Effective surface tokens ----
         // Card surfaces (task rows, month header, info blocks).
-        public static Color CardFill(ThemePreset p, AppSettings s) => Apply(p.CardBgColor, s.CardTransparency, CardMinAlpha);
-        public static Color CardBorder(ThemePreset p, AppSettings s) => Apply(p.BorderColor, s.BorderTransparency, BorderMinAlpha);
+        public static Color CardFill(ThemePreset p) => Apply(p.CardBgColor, CardTransparencyPct, CardMinAlpha);
+        public static Color CardBorder(ThemePreset p) => Apply(p.BorderColor, BorderTransparencyPct, BorderMinAlpha);
 
         /// <summary>Hover fills stay fully opaque — a hover wash must always read clearly over
         /// whatever the (possibly very transparent) resting surface was.</summary>
         public static Color CardHover(ThemePreset p) => p.CardHoverBg;
 
         // Raised panels (status bar, calendar toolbar, settings sections).
-        public static Color PanelFill(ThemePreset p, AppSettings s) => Apply(p.SecondaryBg, s.PanelTransparency, PanelMinAlpha);
-        public static Color PanelBorder(ThemePreset p, AppSettings s) => CardBorder(p, s);
+        public static Color PanelFill(ThemePreset p) => Apply(p.SecondaryBg, PanelTransparencyPct, PanelMinAlpha);
+        public static Color PanelBorder(ThemePreset p) => CardBorder(p);
 
         // The navigation sidebar — the most "glass" surface in the app, so it gets a higher floor.
-        public static Color SidebarFill(ThemePreset p, AppSettings s) => Apply(p.SidebarBg, s.GlassTransparency, SidebarMinAlpha);
+        public static Color SidebarFill(ThemePreset p) => Apply(p.SidebarBg, SidebarTransparencyPct, SidebarMinAlpha);
 
         // Settings section cards use the panel transparency (slightly more present than task cards).
-        public static Color SectionFill(ThemePreset p, AppSettings s) => PanelFill(p, s);
+        public static Color SectionFill(ThemePreset p) => PanelFill(p);
     }
 }

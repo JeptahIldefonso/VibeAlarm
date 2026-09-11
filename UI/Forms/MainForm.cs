@@ -57,6 +57,15 @@ namespace VibeAlarm.UI.Forms
         private Color MutedTextColor => currentTheme.MutedTextColor;
         private Color BorderColor => currentTheme.BorderColor;
 
+        /// <summary>Secondary ink — one tonal step brighter than muted, still clearly
+        /// subordinate to the title: metadata must read at a glance, not require squinting
+        /// (§12 task-row feedback: 8.5pt full-muted read as an afterthought).</summary>
+        private Color SecondaryTextColor =>
+            Color.FromArgb(
+                (MutedTextColor.R + TextColor.R) / 2,
+                (MutedTextColor.G + TextColor.G) / 2,
+                (MutedTextColor.B + TextColor.B) / 2);
+
         private System.Windows.Forms.Timer backgroundAlarmTicker = null!;
         private TrayService tray = null!;
         private bool userInitiatedExit;
@@ -113,14 +122,6 @@ namespace VibeAlarm.UI.Forms
         private Label lblNextUpTime = null!;
         private Label lblNextUpName = null!;
         private Label lblNextUpCountdown = null!;
-
-        // Global "Next Up" status bar (persistent strip, visible on every view)
-        private Guna2Panel statusBarPanel = null!;
-        private Label lblStatusNextUpName = null!;
-        private Label lblStatusNextUpTime = null!;
-        private Label lblStatusNextUpCountdown = null!;
-        private Button btnStatusSnooze = null!;
-        private Button btnStatusDismiss = null!;
         private Label lblAmbientNowPlaying = null!;
         private TrackBar ambientVolumeSlider = null!;
         private int ambientVolume = 70;
@@ -298,8 +299,12 @@ namespace VibeAlarm.UI.Forms
             // The form now owns the new bitmap for its lifetime: never `using` it here, or the
             // pending repaint draws against a disposed image and throws GDI+ "Parameter is not
             // valid." Dispose the PREVIOUS background instead, then swap.
+            // Stretch, not Zoom: Zoom letterboxes a non-matching aspect ratio, leaving hard
+            // edges where the image stops and the scrim color takes over. On a BLURRED image,
+            // Stretch's aspect distortion is invisible — this is the WinForms equivalent of
+            // CSS background-size: cover.
             Image? previous = this.BackgroundImage;
-            this.BackgroundImageLayout = ImageLayout.Zoom;
+            this.BackgroundImageLayout = ImageLayout.Stretch;
             this.BackgroundImage = bg;
             previous?.Dispose();
         }
@@ -317,9 +322,26 @@ namespace VibeAlarm.UI.Forms
         private void BuildDesktopInterface()
         {
             Text = "VibeAlarm";
+            // Build provenance: the exe's own write time in the title bar. A stale binary is
+            // then instantly distinguishable from a fresh build — editing source files does NOT
+            // change an already-built exe, and "why don't I see the update" becomes checkable.
+            try
+            {
+                string? exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    Text = $"VibeAlarm — built {File.GetLastWriteTime(exePath):MMM d, HH:mm}";
+                }
+            }
+            catch
+            {
+                // Module info unavailable (edge hosting cases) — keep the plain title.
+            }
             ClientSize = new Size(1280, 760);
             MinimumSize = new Size(1000, 650);
             FormBorderStyle = FormBorderStyle.Sizable;
+            // Explicit: the window is freely resizable AND maximizable (no MaximumSize lock).
+            MaximizeBox = true;
             StartPosition = FormStartPosition.CenterScreen;
             Font = VibeAlarmPalette.Body(10F);
             BackColor = PrimaryBg;
@@ -330,7 +352,7 @@ namespace VibeAlarm.UI.Forms
             {
                 Dock = DockStyle.Left,
                 Width = VibeAlarmPalette.SidebarWidth,
-                FillColor = GlassSurface.SidebarFill(currentTheme, Appearance.Current),
+                FillColor = GlassSurface.SidebarFill(currentTheme),
                 BorderThickness = 0,
                 BorderRadius = 0,
                 Padding = new Padding(0, DesignTokens.Spacing.Lg, 0, DesignTokens.Spacing.Md)
@@ -338,10 +360,14 @@ namespace VibeAlarm.UI.Forms
             sidebarPanel.ShadowDecoration.Enabled = false;
             sidebarPanel.Paint += (s, e) =>
             {
-                using Pen hairline = new Pen(GlassSurface.CardBorder(currentTheme, Appearance.Current), 1);
+                using Pen hairline = new Pen(GlassSurface.CardBorder(currentTheme), 1);
                 e.Graphics.DrawLine(hairline, sidebarPanel.Width - 1, 0, sidebarPanel.Width - 1, sidebarPanel.Height);
             };
-            mainContainer = new Panel { Dock = DockStyle.Fill, BackColor = PrimaryBg, Padding = new Padding(DesignTokens.Spacing.Xl, DesignTokens.Spacing.Md, DesignTokens.Spacing.Xl, DesignTokens.Spacing.Md) };
+            // Transparent, NOT PrimaryBg: the form's BackgroundImage (the global background
+            // layer) must show through the whole workspace — an opaque container here is what
+            // used to hide it outside the glass cards. The form's own BackColor (set by
+            // ApplyTheme) is the scrim the image blends over.
+            mainContainer = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(DesignTokens.Spacing.Xl, DesignTokens.Spacing.Md, DesignTokens.Spacing.Xl, DesignTokens.Spacing.Md) };
 
             Controls.Add(mainContainer);
             Controls.Add(sidebarPanel);
@@ -404,7 +430,7 @@ namespace VibeAlarm.UI.Forms
             };
             divider.Paint += (s, e) =>
             {
-                using Pen hairline = new Pen(GlassSurface.CardBorder(currentTheme, Appearance.Current), 1);
+                using Pen hairline = new Pen(GlassSurface.CardBorder(currentTheme), 1);
                 e.Graphics.DrawLine(hairline, 0, 4, divider.Width, 4);
             };
             return divider;
@@ -453,7 +479,7 @@ namespace VibeAlarm.UI.Forms
             // Glass card pinned to the sidebar bottom: the factory computes the translucent
             // fill/border; a transparent host provides the 16px side insets (docking ignores
             // Margin, so the inset comes from the host's Padding).
-            sidebarProgressCard = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            sidebarProgressCard = UIControlFactory.CreateCardPanel(preset: currentTheme);
             sidebarProgressCard.Dock = DockStyle.Fill;
 
             lblSidebarIcon = CreateLabel("●", new Point(16, 16), new Size(24, 24), 15F, FontStyle.Bold, TextColor);
@@ -495,10 +521,13 @@ namespace VibeAlarm.UI.Forms
             headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             contentPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, DesignTokens.Spacing.Sm, 0, 0), BackColor = Color.Transparent, AutoScroll = true, AutoScrollMargin = new Size(0, DesignTokens.Spacing.Lg) };
-            BuildGlobalStatusBar();
+            // Native scrollbar follows the active theme (dark mode = Windows' dark scrollbar,
+            // light = default) — the persistent scroll host; view panels re-track on render.
+            NativeScrollbarTheme.Track(contentPanel);
 
+            // The former global status bar is gone (persistent overlap issues; snooze moved to
+            // the alarm popup, complete stays on the task row). Header Top + content Fill only.
             mainContainer.Controls.Add(contentPanel);
-            mainContainer.Controls.Add(statusBarPanel);
             mainContainer.Controls.Add(headerPanel);
 
             // Left: page title (Level 1) over supporting description (Level 2). The title
@@ -593,116 +622,9 @@ namespace VibeAlarm.UI.Forms
             txtSearch.Width = Math.Clamp(available, 210, 320);
         }
 
-        /// <summary>Persistent, app-wide "Next Up" strip pinned to the bottom of the window and
-        /// visible on every view (Home/Tasks/Calendar/Ambient/Settings), not just the Calendar.
-        /// Fed by the scheduler's cached Next Up, so the per-second tick keeps its countdown live.</summary>
-        private void BuildGlobalStatusBar()
+        private void ExecuteModalTaskCreationDialogue(DateTime? presetDate = null)
         {
-            statusBarPanel = new Guna2Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 58,
-                FillColor = GlassSurface.PanelFill(currentTheme, Appearance.Current),
-                BorderThickness = 0,
-                BorderRadius = 0,
-                Padding = new Padding(DesignTokens.Spacing.Lg, 0, DesignTokens.Spacing.Lg, 0)
-            };
-            statusBarPanel.ShadowDecoration.Enabled = false;
-            statusBarPanel.Paint += (s, e) =>
-            {
-                using Pen hairline = new Pen(GlassSurface.PanelBorder(currentTheme, Appearance.Current), 1);
-                e.Graphics.DrawLine(hairline, 0, 0, statusBarPanel.Width, 0);
-            };
-
-            Label lblStatusCaption = CreateLabel("NEXT UP", Point.Empty, new Size(0, 16), 8.5F, FontStyle.Bold, MutedTextColor);
-            lblStatusCaption.Font = VibeAlarmPalette.Body(8.5F, FontStyle.Bold);
-            lblStatusCaption.Dock = DockStyle.Fill;
-            lblStatusCaption.TextAlign = ContentAlignment.MiddleLeft;
-            lblStatusCaption.Margin = new Padding(0, 0, 24, 0);
-
-            // Left info cluster: title over time, stacked with automatic spacing.
-            TableLayoutPanel info = new TableLayoutPanel
-            {
-                RowCount = 2,
-                ColumnCount = 1,
-                BackColor = Color.Transparent
-            };
-            info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-            lblStatusNextUpName = CreateLabel("No upcoming schedules.", Point.Empty, new Size(0, 18), 11.5F, FontStyle.Bold, TextColor);
-            lblStatusNextUpName.Dock = DockStyle.Fill;
-            lblStatusNextUpName.TextAlign = ContentAlignment.MiddleLeft;
-            lblStatusNextUpName.Margin = new Padding(0);
-            lblStatusNextUpTime = CreateLabel("--:-- --", Point.Empty, new Size(0, 20), 10F, FontStyle.Regular, MutedTextColor);
-            lblStatusNextUpTime.Dock = DockStyle.Fill;
-            lblStatusNextUpTime.TextAlign = ContentAlignment.MiddleLeft;
-            lblStatusNextUpTime.Margin = new Padding(0);
-            info.Controls.Add(lblStatusNextUpName);
-            info.Controls.Add(lblStatusNextUpTime);
-
-            // Countdown fills the middle and right-aligns itself regardless of label widths.
-            lblStatusNextUpCountdown = CreateLabel("—", Point.Empty, new Size(0, 28), 15F, FontStyle.Bold, TextColor);
-            lblStatusNextUpCountdown.Font = VibeAlarmPalette.Mono(15F, FontStyle.Bold);
-            lblStatusNextUpCountdown.Dock = DockStyle.Fill;
-            lblStatusNextUpCountdown.TextAlign = ContentAlignment.MiddleRight;
-            lblStatusNextUpCountdown.Margin = new Padding(24, 0, 24, 0);
-
-            // Matched action pair. Buttons size to content (MinWidth is a floor, not a ceiling)
-            // so letter-distance never clips "SNOOZE +9M" vs "DISMISS" differently (§10.2).
-            FlowLayoutPanel actions = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = Color.Transparent,
-                Margin = new Padding(24, 0, 0, 0)
-            };
-
-            btnStatusSnooze = CreateStatusActionButton("SNOOZE", AccentColor);
-            btnStatusSnooze.AutoSize = true;
-            btnStatusSnooze.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            btnStatusSnooze.MinimumSize = new Size(96, 34);
-            btnStatusSnooze.Padding = new Padding(16, 0, 16, 0);
-            btnStatusSnooze.Margin = new Padding(0, 12, 10, 12);
-            btnStatusSnooze.AccessibleName = "Snooze next up for nine minutes";
-            btnStatusSnooze.Click += (_, _) => SnoozeFromStatusBar();
-
-            btnStatusDismiss = CreateStatusActionButton("DISMISS", TextColor);
-            btnStatusDismiss.AutoSize = true;
-            btnStatusDismiss.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            btnStatusDismiss.MinimumSize = new Size(96, 34);
-            btnStatusDismiss.Padding = new Padding(16, 0, 16, 0);
-            btnStatusDismiss.Margin = new Padding(10, 12, 0, 12);
-            btnStatusDismiss.AccessibleName = "Dismiss next up";
-            btnStatusDismiss.Click += (_, _) => DismissFromStatusBar();
-
-            actions.Controls.Add(btnStatusSnooze);
-            actions.Controls.Add(btnStatusDismiss);
-
-            // Auto, Auto, *, Auto — guaranteed alignment regardless of text length (§10.4).
-            TableLayoutPanel bar = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
-                RowCount = 1,
-                ColumnCount = 4
-            };
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            bar.Controls.Add(lblStatusCaption, 0, 0);
-            bar.Controls.Add(info, 1, 0);
-            bar.Controls.Add(lblStatusNextUpCountdown, 2, 0);
-            bar.Controls.Add(actions, 3, 0);
-            statusBarPanel.Controls.Add(bar);
-        }
-
-        private void ExecuteModalTaskCreationDialogue()
-        {
-            using (TaskCreateDialog dialog = new TaskCreateDialog(clock))
+            using (TaskCreateDialog dialog = new TaskCreateDialog(clock, presetDate))
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
@@ -843,6 +765,8 @@ namespace VibeAlarm.UI.Forms
                 Margin = new Padding(2, DesignTokens.Spacing.Sm, 0, DesignTokens.Spacing.Sm),
                 Padding = new Padding(0)
             };
+            // Tracked caps — the quiet grouped-list header treatment (Things/Reminders style).
+            ApplyLetterSpacing(heading);
             return heading;
         }
 
@@ -862,16 +786,20 @@ namespace VibeAlarm.UI.Forms
                 Margin = new Padding(0)
             };
             calendarLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            calendarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // month header
-            calendarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // next up
-            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 48F)); // month grid
-            calendarLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // selected-day summary
-            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 52F)); // day list
+            // Fixed-height strips (header / Next Up / summary) use ABSOLUTE rows: a Dock.Fill
+            // child inside an AutoSize row does not grow the row — the child paints over the
+            // neighboring rows (the "Add task" button clipping into the grid and day list).
+            // Absolute row = strip height + the strip's own vertical margins.
+            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));  // month header
+            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 88F + DesignTokens.Spacing.Sm)); // next up (+ gap below)
+            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 65F));  // month grid — the dominant element
+            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F + 2 * DesignTokens.Spacing.Sm)); // summary (+ gaps)
+            calendarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 35F));  // day list
 
             // ---- Month header: title left, [<] [Today] [>] right ----
-            Guna2Panel monthHeader = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            Guna2Panel monthHeader = UIControlFactory.CreateCardPanel(preset: currentTheme);
             monthHeader.Dock = DockStyle.Fill;
-            monthHeader.Height = 58;
+            monthHeader.Margin = new Padding(0); // height comes from the Absolute row
             monthHeader.Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Md, 0);
 
             TableLayoutPanel headerRow = new TableLayoutPanel
@@ -942,21 +870,57 @@ namespace VibeAlarm.UI.Forms
             monthHeader.Controls.Add(headerRow);
             calendarLayout.Controls.Add(monthHeader, 0, 0);
 
-            // ---- NEXT UP block — prominent nearest upcoming schedule with live countdown ----
-            Guna2Panel nextUpCard = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            // ---- NEXT UP block — nearest upcoming schedule with live countdown. Container
+            // layout only (no absolute coordinates); idle state shows real guidance, not dashes.
+            Guna2Panel nextUpCard = UIControlFactory.CreateCardPanel(preset: currentTheme);
             nextUpCard.Dock = DockStyle.Fill;
-            nextUpCard.Height = 116;
-            Label lblNextUpTitle = CreateLabel("NEXT UP", new Point(DesignTokens.Spacing.Lg, 16), new Size(160, 18), 9.5F, FontStyle.Bold, MutedTextColor);
-            lblNextUpTitle.Font = VibeAlarmPalette.Body(9.5F, FontStyle.Bold);
-            lblNextUpTime = CreateLabel("--:-- --", new Point(DesignTokens.Spacing.Lg, 34), new Size(420, 38), 26F, FontStyle.Bold, TextColor);
-            lblNextUpTime.Font = VibeAlarmPalette.Display(20F, FontStyle.Bold);
-            lblNextUpName = CreateLabel("No upcoming schedules.", new Point(DesignTokens.Spacing.Lg, 78), new Size(460, 22), 12F, FontStyle.Regular, MutedTextColor);
-            lblNextUpName.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblNextUpCountdown = CreateLabel("—", new Point(700, 42), new Size(246, 36), 17F, FontStyle.Bold, TextColor);
-            lblNextUpCountdown.Font = VibeAlarmPalette.Mono(15F, FontStyle.Bold);
+            nextUpCard.Margin = new Padding(0, 0, 0, DesignTokens.Spacing.Sm); // gap to the grid below
+            nextUpCard.Padding = new Padding(DesignTokens.Spacing.Lg, DesignTokens.Spacing.Sm, DesignTokens.Spacing.Lg, DesignTokens.Spacing.Sm);
+
+            TableLayoutPanel nextUpLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 3,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+            nextUpLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            nextUpLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            nextUpLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // caption
+            nextUpLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 62F)); // big time
+            nextUpLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 38F)); // task name
+
+            Label lblNextUpTitle = CreateLabel("NEXT UP", Point.Empty, new Size(0, 14), 8.5F, FontStyle.Bold, MutedTextColor);
+            lblNextUpTitle.Dock = DockStyle.Fill;
+            lblNextUpTitle.TextAlign = ContentAlignment.MiddleLeft;
+            lblNextUpTitle.Margin = new Padding(0);
+
+            lblNextUpTime = CreateLabel("--:-- --", Point.Empty, new Size(0, 34), 19F, FontStyle.Bold, TextColor);
+            lblNextUpTime.Font = VibeAlarmPalette.Display(19F, FontStyle.Bold);
+            lblNextUpTime.Dock = DockStyle.Fill;
+            lblNextUpTime.TextAlign = ContentAlignment.MiddleLeft;
+            lblNextUpTime.AutoEllipsis = true;
+            lblNextUpTime.Margin = new Padding(0);
+
+            lblNextUpName = CreateLabel("No upcoming schedules.", Point.Empty, new Size(0, 18), 9.5F, FontStyle.Regular, MutedTextColor);
+            lblNextUpName.Dock = DockStyle.Fill;
+            lblNextUpName.TextAlign = ContentAlignment.MiddleLeft;
+            lblNextUpName.AutoEllipsis = true;
+            lblNextUpName.Margin = new Padding(0);
+
+            lblNextUpCountdown = CreateLabel("—", Point.Empty, new Size(130, 0), 13F, FontStyle.Bold, TextColor);
+            lblNextUpCountdown.Font = VibeAlarmPalette.Mono(13F, FontStyle.Bold);
+            lblNextUpCountdown.Dock = DockStyle.Fill;
             lblNextUpCountdown.TextAlign = ContentAlignment.MiddleRight;
-            lblNextUpCountdown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            nextUpCard.Controls.AddRange(new Control[] { lblNextUpTitle, lblNextUpTime, lblNextUpName, lblNextUpCountdown });
+            lblNextUpCountdown.Margin = new Padding(DesignTokens.Spacing.Md, 0, 0, 0);
+
+            nextUpLayout.Controls.Add(lblNextUpTitle, 0, 0);
+            nextUpLayout.Controls.Add(lblNextUpCountdown, 1, 0);
+            nextUpLayout.SetRowSpan(lblNextUpCountdown, 3);
+            nextUpLayout.Controls.Add(lblNextUpTime, 0, 1);
+            nextUpLayout.Controls.Add(lblNextUpName, 0, 2);
+            nextUpCard.Controls.Add(nextUpLayout);
             calendarLayout.Controls.Add(nextUpCard, 0, 1);
 
             // ---- Month grid ----
@@ -978,21 +942,48 @@ namespace VibeAlarm.UI.Forms
             RebuildCalendarMonthGrid();
             calendarLayout.Controls.Add(calendarStripMatrix, 0, 2);
 
-            // ---- Selected-day summary row ----
-            Guna2Panel actionRow = UIControlFactory.CreatePanelSurface(preset: currentTheme, settings: Appearance.Current);
+            // ---- Selected-day summary row: day title + progress left, Add-task action and
+            // live clock right. Container layout — the clock can never collide with the title.
+            Guna2Panel actionRow = UIControlFactory.CreatePanelSurface(preset: currentTheme);
             actionRow.Dock = DockStyle.Fill;
-            actionRow.Height = 44;
-            lblCalendarProgress = CreateLabel("0 tasks completed today", new Point(DesignTokens.Spacing.Lg, 13), new Size(460, 22), 10.5F, FontStyle.Bold, TextColor);
-            actionRow.Controls.Add(lblCalendarProgress);
+            actionRow.Margin = new Padding(0, DesignTokens.Spacing.Sm, 0, DesignTokens.Spacing.Sm); // breathing room vs grid/list
+            actionRow.Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Md, 0);
 
-            // LIVE clock chip — updates every second (via TimeService), independent of the calendar grid.
-            lblLiveClock = CreateLabel(DateTime.Now.ToString("hh:mm:ss tt"), new Point(560, 10), new Size(386, 24), 11F, FontStyle.Bold, TextColor);
-            lblLiveClock.Font = VibeAlarmPalette.Mono(11F, FontStyle.Bold);
+            TableLayoutPanel summaryLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+            summaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            summaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            summaryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            lblCalendarProgress = CreateLabel("0 tasks completed today", Point.Empty, new Size(0, 22), 10.5F, FontStyle.Bold, TextColor);
+            lblCalendarProgress.Dock = DockStyle.Fill;
+            lblCalendarProgress.TextAlign = ContentAlignment.MiddleLeft;
+            lblCalendarProgress.AutoEllipsis = true;
+            lblCalendarProgress.Margin = new Padding(0);
+            summaryLayout.Controls.Add(lblCalendarProgress, 0, 0);
+
+            // Same New Task flow as the header button, pre-scheduled to the selected day.
+            Guna2Button btnAddForDay = UIControlFactory.CreatePrimaryButton("Add task", IconKind.Plus, preset: currentTheme);
+            btnAddForDay.Size = new Size(114, 32);
+            btnAddForDay.Margin = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Md, 0);
+            btnAddForDay.AccessibleName = "Add a task on the selected day";
+            btnAddForDay.Click += (s, e) => ExecuteModalTaskCreationDialogue(activeCalendarDate);
+            summaryLayout.Controls.Add(btnAddForDay, 1, 0);
+
+            lblLiveClock = CreateLabel($"● LIVE  {DateTime.Now:hh:mm:ss tt}", Point.Empty, new Size(0, 22), 10.5F, FontStyle.Bold, TextColor);
+            lblLiveClock.Font = VibeAlarmPalette.Mono(10.5F, FontStyle.Bold);
+            lblLiveClock.Dock = DockStyle.Fill;
             lblLiveClock.TextAlign = ContentAlignment.MiddleRight;
-            lblLiveClock.Text = $"● LIVE  {DateTime.Now:hh:mm:ss tt}";
-            lblLiveClock.Padding = new Padding(0, 0, DesignTokens.Spacing.Md, 0);
-            lblLiveClock.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            actionRow.Controls.Add(lblLiveClock);
+            lblLiveClock.Margin = new Padding(0);
+            summaryLayout.Controls.Add(lblLiveClock, 2, 0);
+
+            actionRow.Controls.Add(summaryLayout);
             calendarLayout.Controls.Add(actionRow, 0, 3);
 
             // ---- Selected day's task list ----
@@ -1004,6 +995,7 @@ namespace VibeAlarm.UI.Forms
                 AutoScroll = true,
                 Margin = new Padding(0)
             };
+            NativeScrollbarTheme.Track(calendarListPanel);
             calendarLayout.Controls.Add(calendarListPanel, 0, 4);
             BindRowWidthToHost(calendarListPanel);
 
@@ -1046,125 +1038,144 @@ namespace VibeAlarm.UI.Forms
             bool isToday = date.Date == DateTime.Today;
             bool isPast = date.Date < DateTime.Today;
 
-            // Day visual-state summary derived from the task lifecycle (no per-second work here).
-            int scheduledCount = masterTaskList.Count(t => GetTaskDate(t).Date == date.Date);
-            int completedCount = masterTaskList.Count(t =>
-                t.GetState() == TaskState.Completed && GetTaskDate(t).Date == date.Date);
-            int expiredCount = masterTaskList.Count(t =>
-                t.GetState() == TaskState.Expired && GetTaskDate(t).Date == date.Date);
-            int upcomingCount = masterTaskList.Count(t =>
-                t.GetState() is TaskState.Scheduled or TaskState.Due && GetTaskDate(t).Date == date.Date);
+            // The day's tasks drive the in-cell indicators: up to three type-colored dots
+            // (same mapping as the task cards), then "+N" when the day holds more. Cells are
+            // a fixed grid size — indicators paint inside, so content never shifts layout.
+            List<TaskItem> dayTasks = masterTaskList
+                .Where(t => GetTaskDate(t).Date == date.Date)
+                .OrderBy(t => AlarmEngine.GetScheduledDateTime(t))
+                .ToList();
 
-            // Compact editorial status line beneath the day number.
-            string status = string.Empty;
-            if (upcomingCount > 0)
-            {
-                status = $"○ {scheduledCount}";
-            }
-            if (completedCount > 0)
-            {
-                status = $"✓ {completedCount} done";
-            }
-            if (expiredCount > 0 && status.Length == 0)
-            {
-                status = $"— {expiredCount} past";
-            }
-
-            // §14.4 Notion/Calendar: TODAY = number inside a filled accent circle; a small accent
-            // dot under the number signals a day with tasks; SELECTED = accent-tinted wash.
             Color numberColor = isToday
                 ? Color.White
-                : isPast
-                    ? Color.FromArgb(150, MutedTextColor)
-                    : isCurrentMonth ? TextColor : MutedTextColor;
-            Color statusColor = isPast ? Color.FromArgb(120, MutedTextColor) : MutedTextColor;
+                : !isCurrentMonth
+                    ? Color.FromArgb(140, MutedTextColor)   // leading/trailing days: dimmed, not hidden
+                    : isPast
+                        ? Color.FromArgb(150, MutedTextColor)
+                        : TextColor;
 
             Panel cell = new Panel
             {
                 Tag = date,
                 Dock = DockStyle.Fill,
-                Margin = new Padding(3),
+                Margin = new Padding(1),
                 BackColor = Color.Transparent,
                 Cursor = Cursors.Hand,
                 AccessibleName = date.ToString("dddd, MMMM d, yyyy")
             };
             bool hovering = false;
             float dpr = DeviceDpi / 96F;
-            int contentTop = (int)(6 * dpr);
 
+            // Date number sits in the top-left corner (standard calendar). TODAY = the number
+            // inside a filled accent circle; SELECTED = accent-tinted wash + accent border —
+            // the two states stay visually distinct even when they coincide.
             void DrawNumber(Graphics g)
             {
-                Font numberFont = VibeAlarmPalette.Mono((float)(isToday ? 9.5 : 8.5), isToday ? FontStyle.Bold : FontStyle.Regular);
-                using StringFormat fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                int d = (int)(20 * dpr);
-                int cx = cell.Width / 2;
-                RectangleF cellRect = new RectangleF(0, contentTop, cell.Width, d + 2);
+                using Font numberFont = VibeAlarmPalette.Mono(9F, isToday ? FontStyle.Bold : FontStyle.Regular);
                 if (isToday)
                 {
+                    int d = (int)(22 * dpr);
                     using SolidBrush circleBrush = new SolidBrush(AccentColor);
-                    g.FillEllipse(circleBrush, cx - d / 2f, contentTop, d, d);
+                    g.FillEllipse(circleBrush, 5 * dpr, 4 * dpr, d, d);
+                    using StringFormat centered = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    using SolidBrush ink = new SolidBrush(Color.White);
+                    g.DrawString(date.Day.ToString(), numberFont, ink, new RectangleF(5 * dpr, 4 * dpr, d, d), centered);
                 }
-                g.DrawString(date.Day.ToString(), numberFont, new SolidBrush(numberColor), cellRect, fmt);
+                else
+                {
+                    using StringFormat near = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Near };
+                    using SolidBrush ink = new SolidBrush(numberColor);
+                    g.DrawString(date.Day.ToString(), numberFont, ink, new RectangleF(7 * dpr, 5 * dpr, cell.Width - 8 * dpr, 16 * dpr), near);
+                }
             }
 
-            void DrawStatus(Graphics g)
+            void DrawIndicators(Graphics g)
             {
-                if (string.IsNullOrEmpty(status))
+                if (dayTasks.Count == 0)
                 {
                     return;
                 }
-                using Font statusFont = VibeAlarmPalette.Mono(6.5F);
-                using StringFormat fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                RectangleF rect = new RectangleF(0, (int)(28 * dpr), cell.Width, 12);
-                g.DrawString(status, statusFont, new SolidBrush(statusColor), rect, fmt);
-            }
-
-            void DrawDot(Graphics g)
-            {
-                if (scheduledCount <= 0)
+                float dot = 5 * dpr;
+                float gap = 3 * dpr;
+                float x = 7 * dpr;
+                float y = cell.Height - 9 * dpr;
+                foreach (TaskItem task in dayTasks.Take(3))
                 {
-                    return;
+                    using SolidBrush dotBrush = new SolidBrush(TypeDotColor(task));
+                    g.FillEllipse(dotBrush, x, y, dot, dot);
+                    x += dot + gap;
                 }
-                using SolidBrush dotBrush = new SolidBrush(AccentColor);
-                g.FillEllipse(dotBrush, cell.Width / 2f - 2.5f * dpr, cell.Height - (int)(8 * dpr), 5 * dpr, 5 * dpr);
+                if (dayTasks.Count > 3)
+                {
+                    using Font moreFont = VibeAlarmPalette.Mono(6.5F);
+                    using SolidBrush ink = new SolidBrush(MutedTextColor);
+                    g.DrawString($"+{dayTasks.Count - 3}", moreFont, ink, x, y - 3 * dpr);
+                }
             }
 
+            // Every cell is a real, bordered cell: normal = card fill + hairline border,
+            // hover = card-hover fill, selected = accent wash + accent border.
             cell.Paint += (s, e) =>
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 Rectangle rect = new Rectangle(0, 0, cell.Width - 1, cell.Height - 1);
-                using (GraphicsPath path = GetRoundRectPath(rect, DesignTokens.Radius.Small))
+                using GraphicsPath path = GetRoundRectPath(rect, DesignTokens.Radius.Small);
+                Color fill = isSelected
+                    ? currentTheme.AccentTintColor
+                    : hovering
+                        ? CardHoverBg
+                        : GlassSurface.CardFill(currentTheme);
+                using (SolidBrush fillBrush = new SolidBrush(fill))
                 {
-                    using SolidBrush fillBrush = new SolidBrush(isSelected ? AccentTintColor : hovering ? CardHoverBg : Color.Transparent);
                     e.Graphics.FillPath(fillBrush, path);
-                    if (isSelected)
-                    {
-                        using Pen ring = new Pen(AccentColor, 1.6F);
-                        e.Graphics.DrawPath(ring, path);
-                    }
                 }
+                using Pen borderPen = new Pen(
+                    isSelected ? AccentColor : GlassSurface.CardBorder(currentTheme),
+                    isSelected ? 1.6F : 1F);
+                e.Graphics.DrawPath(borderPen, path);
                 DrawNumber(e.Graphics);
-                DrawStatus(e.Graphics);
-                DrawDot(e.Graphics);
+                DrawIndicators(e.Graphics);
             };
 
             cell.MouseEnter += (s, e) => { hovering = true; cell.Invalidate(); };
             cell.MouseLeave += (s, e) => { hovering = false; cell.Invalidate(); };
+
+            // Single click = select the day (the detail panel below lists its tasks, and the
+            // Add-task button targets it). Skipping the re-render when the selection is
+            // unchanged keeps this control alive so DoubleClick below can still fire.
             cell.Click += (s, e) =>
             {
-                if (cell.Tag is not DateTime clickedDate)
+                if (cell.Tag is not DateTime clickedDate || clickedDate.Date == activeCalendarDate.Date)
                 {
                     return;
                 }
-
                 activeCalendarDate = clickedDate;
                 activeCalendarDay = activeCalendarDate.DayOfWeek.ToString();
                 displayedCalendarMonth = new DateTime(activeCalendarDate.Year, activeCalendarDate.Month, 1);
                 RenderActiveView();
             };
 
+            // Double click = schedule: the SAME New Task flow as the header button, with the
+            // clicked day pre-filled — never a second, parallel creation form.
+            cell.DoubleClick += (s, e) =>
+            {
+                if (cell.Tag is DateTime clickedDate)
+                {
+                    ExecuteModalTaskCreationDialogue(clickedDate);
+                }
+            };
+
             return cell;
         }
+
+        /// <summary>Semantic type color shared by task cards and calendar day cells:
+        /// alarm = error, important = warning, notification = muted.</summary>
+        private Color TypeDotColor(TaskItem task) => task.Type switch
+        {
+            SchedulerService.TaskTypeAlarm => currentTheme.ErrorColor,
+            SchedulerService.TaskTypeImportant => currentTheme.WarningColor,
+            _ => MutedTextColor
+        };
 
         private void RenderDashboardView()
         {
@@ -1180,9 +1191,10 @@ namespace VibeAlarm.UI.Forms
                 AutoScroll = true,
                 Margin = new Padding(0)
             };
+            NativeScrollbarTheme.Track(dashboardFlow);
 
             // ---- TODAY info row: small chips on one card (no giant stat cards) ----
-            Guna2Panel infoCard = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            Guna2Panel infoCard = UIControlFactory.CreateCardPanel(preset: currentTheme);
             infoCard.Height = 52;
             infoCard.Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Md, 0);
 
@@ -1274,14 +1286,13 @@ namespace VibeAlarm.UI.Forms
         {
             UpdateHeaderContext();
 
-            // §19–24: the whole settings page (scrolling section cards, two-column rows,
-            // 0–100% transparency sliders) lives in SettingsPageView. MainForm only hosts it
-            // and wires the five callbacks — the page owns no business logic.
+            // §19–24: the whole settings page (scrolling section cards, two-column rows)
+            // lives in SettingsPageView. MainForm only hosts it and wires the callbacks —
+            // the page owns no business logic.
             SettingsPageView settingsPage = new SettingsPageView(
                 getTasks: () => masterTaskList,
                 onThemeModeChanged: ApplyThemeMode,
                 onAppearanceCommitted: ApplyAppearanceSettings,
-                onAppearancePreview: RefreshGlassSurfaces,
                 onDataChanged: RefreshDataCounters)
             {
                 Dock = DockStyle.Fill
@@ -1303,9 +1314,10 @@ namespace VibeAlarm.UI.Forms
                 AutoScroll = true,
                 Margin = new Padding(0)
             };
+            NativeScrollbarTheme.Track(ambientFlow);
 
             // ---- Hero: text left, Stop right ----
-            Guna2Panel heroPanel = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            Guna2Panel heroPanel = UIControlFactory.CreateCardPanel(preset: currentTheme);
             heroPanel.Height = 116;
             heroPanel.Padding = new Padding(DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md, DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md);
 
@@ -1385,7 +1397,7 @@ namespace VibeAlarm.UI.Forms
             ambientFlow.Controls.Add(importButton);
 
             // ---- Volume card: name/hint left, slider + live % right ----
-            Guna2Panel volumePanel = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            Guna2Panel volumePanel = UIControlFactory.CreateCardPanel(preset: currentTheme);
             volumePanel.Height = 96;
             volumePanel.Padding = new Padding(DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md, DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md);
 
@@ -1475,7 +1487,7 @@ namespace VibeAlarm.UI.Forms
             ambientFlow.Controls.Add(volumePanel);
 
             // ---- Built-in offline sounds ----
-            Guna2Panel builtinPanel = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
+            Guna2Panel builtinPanel = UIControlFactory.CreateCardPanel(preset: currentTheme);
             builtinPanel.Height = 140;
             builtinPanel.Padding = new Padding(DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md, DesignTokens.Spacing.Lg, DesignTokens.Spacing.Md);
 
@@ -1735,15 +1747,47 @@ namespace VibeAlarm.UI.Forms
             int rowWidth = GetListRowWidth();
             int cardHeight = Appearance.TaskRowHeight;
 
-            Guna2Panel card = UIControlFactory.CreateCardPanel(preset: currentTheme, settings: Appearance.Current);
-            card.Size = new Size(rowWidth, cardHeight);
-            card.Margin = new Padding(0, 0, 0, DesignTokens.Spacing.Sm);
-            card.Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Md, 0);
+            // Flat list (§12, Google Tasks / MS To Do style): the row IS the page at rest —
+            // no per-item box, border, or radius; a 1px hairline divider separates neighbors,
+            // and the ONLY visual distinction is the hover highlight. A Guna2Panel (not a
+            // plain Panel) still hosts the row so Guna routes child-mouse messages to it,
+            // keeping the hover reliable with label children.
+            Guna2Panel card = new Guna2Panel
+            {
+                Size = new Size(rowWidth, cardHeight),
+                // Dividers (not gaps) separate rows — zero margin keeps one continuous list.
+                Margin = new Padding(0),
+                // Extra padding on the right (Lg vs Md): the trailing pill + "…" button
+                // must never touch the row edge — text shrinks with AutoEllipsis, they don't.
+                Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Lg, 0),
+                FillColor = Color.Transparent,
+                BorderThickness = 0,
+                BorderRadius = 0,
+                BackColor = Color.Transparent
+            };
 
-            // Hover: one quiet opaque step (GlassSurface.CardHover is intentionally opaque).
-            Color restFill = card.FillColor;
-            card.MouseEnter += (s, e) => card.FillColor = GlassSurface.CardHover(currentTheme);
-            card.MouseLeave += (s, e) => card.FillColor = restFill;
+            // Hairline divider on the row's bottom edge (drawn in Paint so it lands on top
+            // of both the transparent rest state and the hover fill).
+            card.Paint += (s, e) =>
+            {
+                using Pen divider = new Pen(Color.FromArgb(120, currentTheme.BorderColor));
+                e.Graphics.DrawLine(divider, 0, card.Height - 1, card.Width, card.Height - 1);
+            };
+
+            // Hover: one quiet opaque step (GlassSurface.CardHover is intentionally opaque) —
+            // the only time a row looks distinct from its neighbors, besides the divider.
+            Color hoverFill = GlassSurface.CardHover(currentTheme);
+            TypeBadge? badge = null; // created below; declared early so hover can refresh it
+            card.MouseEnter += (s, e) =>
+            {
+                card.FillColor = hoverFill;
+                badge?.SetBackdrop(hoverFill); // pill corners follow the row's current fill
+            };
+            card.MouseLeave += (s, e) =>
+            {
+                card.FillColor = Color.Transparent;
+                badge?.SetBackdrop(currentTheme.PrimaryBg);
+            };
 
             TableLayoutPanel row = new TableLayoutPanel
             {
@@ -1753,9 +1797,12 @@ namespace VibeAlarm.UI.Forms
                 BackColor = Color.Transparent,
                 Margin = new Padding(0)
             };
+            // One Percent(100) row: all three columns measure against the SAME vertical
+            // midpoint, so checkbox / text / trailing read as one centered unit.
+            row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));   // checkbox column
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); // text column
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // type dot + more
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // type pill + more
 
             // ---- Checkbox: quiet circle, filled check when completed ----
             Guna2Button btnToggle = new Guna2Button
@@ -1776,6 +1823,9 @@ namespace VibeAlarm.UI.Forms
                 btnToggle.ImageSize = new Size(14, 14);
             }
             btnToggle.HoverState.BorderColor = TextColor;
+            // Hover = border shift AND a quiet fill — an obvious-but-subtle cue matching the
+            // row/card hover treatment (Guna hovers the full circle, so the hit area is clear).
+            btnToggle.HoverState.FillColor = GlassSurface.CardHover(currentTheme);
             btnToggle.Click += (s, e) =>
             {
                 item.Completed = !item.Completed;
@@ -1784,17 +1834,22 @@ namespace VibeAlarm.UI.Forms
             row.Controls.Add(btnToggle, 0, 0);
 
             // ---- Text: title over one-line metadata ("Today · 8:00 PM") ----
+            // Rows are FONT-DRIVEN (AutoSize), not a fixed 55/45 split of the card height:
+            // each row is exactly its label's line height, so descenders can never clip at any
+            // DPI or font-fallback. Flexible spacer rows above and below center the pair.
             TableLayoutPanel textBlock = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 2,
+                RowCount = 4,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0)
             };
             textBlock.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            textBlock.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
-            textBlock.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
+            textBlock.RowStyles.Add(new RowStyle(SizeType.Percent, 50F)); // spacer
+            textBlock.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // title
+            textBlock.RowStyles.Add(new RowStyle(SizeType.AutoSize));     // meta
+            textBlock.RowStyles.Add(new RowStyle(SizeType.Percent, 50F)); // spacer
 
             Label lblTitle = new Label
             {
@@ -1815,63 +1870,120 @@ namespace VibeAlarm.UI.Forms
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.TopLeft,
                 AutoEllipsis = true,
-                Font = VibeAlarmPalette.Body(8.5F),
-                ForeColor = MutedTextColor,
+                // 9.5pt (up from 8.5) + secondary ink (up from full-muted): the metadata
+                // line reads at a glance while the bold title stays the anchor.
+                Font = VibeAlarmPalette.Body(9.5F),
+                ForeColor = SecondaryTextColor,
                 BackColor = Color.Transparent,
-                Margin = new Padding(1, 2, 0, 0)
+                Margin = new Padding(0, 3, 0, 0) // consistent title→meta gap, never cramped
             };
-            textBlock.Controls.Add(lblTitle, 0, 0);
-            textBlock.Controls.Add(lblMeta, 0, 1);
+            textBlock.Controls.Add(lblTitle, 0, 1);
+            textBlock.Controls.Add(lblMeta, 0, 2);
             row.Controls.Add(textBlock, 1, 0);
 
-            // ---- Type dot + label, then the more (…) button ----
-            FlowLayoutPanel trailing = new FlowLayoutPanel
+            // ---- Type pill, then the more (…) button ----
+            // A TableLayoutPanel, NOT a FlowLayoutPanel with hand-computed top margins (the
+            // old "nudge" approach — the pill/… offsets drifted at other row heights and DPI
+            // scales and read as elements competing for the same space). Children anchored
+            // LEFT are vertically CENTERED by the panel itself at any row height — no math.
+            TableLayoutPanel trailing = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
+                ColumnCount = 2,
+                RowCount = 1,
                 BackColor = Color.Transparent,
-                Margin = new Padding(DesignTokens.Spacing.Md, 0, 0, 0)
+                Margin = new Padding(DesignTokens.Spacing.Md, 0, 0, 0) // 16px gap after the text block
             };
+            trailing.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); // type pill
+            trailing.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30 + DesignTokens.Spacing.Md)); // … button + 16px gap
 
-            Color typeColor = item.Type switch
-            {
-                SchedulerService.TaskTypeAlarm => currentTheme.ErrorColor,
-                SchedulerService.TaskTypeImportant => currentTheme.WarningColor,
-                _ => MutedTextColor
-            };
-            int dotVOffset = Math.Max(0, (cardHeight - 20) / 2);
-            Label lblTypeDot = new Label
-            {
-                Text = "●",
-                AutoSize = true,
-                Font = new Font("Segoe UI", 8F),
-                ForeColor = typeColor,
-                BackColor = Color.Transparent,
-                Margin = new Padding(2, dotVOffset + 4, 4, 0)
-            };
-            Label lblType = new Label
-            {
-                Text = item.Type,
-                AutoSize = true,
-                Font = VibeAlarmPalette.Body(8.5F),
-                ForeColor = MutedTextColor,
-                BackColor = Color.Transparent,
-                Margin = new Padding(0, dotVOffset, 10, 0)
-            };
-            trailing.Controls.Add(lblTypeDot);
-            trailing.Controls.Add(lblType);
+            // Status pill in the type's semantic color (Todoist/Linear tag pattern) — the
+            // type color is folded into fill + ink. Backdrop = the page background: the row
+            // itself is transparent at rest, and hover swaps the backdrop to the highlight.
+            TypeBadge typeBadge = new TypeBadge(item.Type, TypeDotColor(item), currentTheme.PrimaryBg, VibeAlarmPalette.Mono(8.5F, FontStyle.Bold));
+            badge = typeBadge;
+            typeBadge.Anchor = AnchorStyles.Left;
+            badge.Margin = new Padding(0, 0, DesignTokens.Spacing.Md, 0);
+            trailing.Controls.Add(badge, 0, 0);
 
             Guna2Button btnOptions = UIControlFactory.CreateIconButton(IconKind.More, preset: currentTheme, iconSize: 16, buttonSize: 30);
-            btnOptions.Margin = new Padding(0, Math.Max(0, (cardHeight - 30) / 2), 0, 0);
+            btnOptions.Anchor = AnchorStyles.Left;
+            btnOptions.Margin = new Padding(0);
             btnOptions.Click += (s, e) => ShowTaskContextMenu(item, btnOptions);
-            trailing.Controls.Add(btnOptions);
+            trailing.Controls.Add(btnOptions, 1, 0);
 
             row.Controls.Add(trailing, 2, 0);
             card.Controls.Add(row);
             return card;
+        }
+
+        /// <summary>Status pill for a task's type (ALARM / NOTIFICATION / IMPORTANT): rounded
+        /// tinted capsule in the type's semantic color — the Todoist/Linear tag pattern. The
+        /// capsule's tint is BLENDED with the page background into an opaque color, and the
+        /// whole client rect is painted with the row's CURRENT backdrop first (rest = page,
+        /// hover = highlight, swapped via <see cref="SetBackdrop"/>) so the corners outside
+        /// the capsule always match the row exactly — no simulated transparency needed.</summary>
+        private sealed class TypeBadge : Control
+        {
+            private readonly string label;
+            private readonly Color ink;
+            private readonly Color fill;
+            private readonly Color border;
+            private Color backdrop;
+
+            public TypeBadge(string text, Color typeColor, Color backdrop, Font font)
+            {
+                label = text.ToUpperInvariant();
+                ink = typeColor;
+                fill = Blend(typeColor, backdrop, 0.14f);
+                border = Blend(typeColor, backdrop, 0.38f);
+                this.backdrop = backdrop;
+                Font = font;
+                TabStop = false;
+                SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+
+                // Fixed, text-driven size: the pill can never clip its own label.
+                Size preferred = TextRenderer.MeasureText(label, font);
+                Size = new Size(preferred.Width + 18, preferred.Height + 7);
+            }
+
+            /// <summary>Swaps the corner/backdrop color — the row calls this when its hover
+            /// fill turns on or off so the pill never floats on a stale background.</summary>
+            public void SetBackdrop(Color value)
+            {
+                backdrop = value;
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                // Full rect in the row's current fill FIRST: the capsule's corners must be
+                // indistinguishable from the row behind it in both rest and hover states.
+                using (SolidBrush back = new SolidBrush(backdrop))
+                {
+                    e.Graphics.FillRectangle(back, ClientRectangle);
+                }
+
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using GraphicsPath path = GetRoundRectPath(new Rectangle(0, 0, Width - 1, Height - 1), (Height - 1) / 2);
+                using (SolidBrush capsule = new SolidBrush(fill))
+                {
+                    e.Graphics.FillPath(capsule, path);
+                }
+                using (Pen edge = new Pen(border))
+                {
+                    e.Graphics.DrawPath(edge, path);
+                }
+                TextRenderer.DrawText(e.Graphics, label, Font, ClientRectangle, ink,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                base.OnPaint(e);
+            }
+
+            private static Color Blend(Color source, Color backdrop, float amount) =>
+                Color.FromArgb(
+                    (int)(source.R * amount + backdrop.R * (1 - amount)),
+                    (int)(source.G * amount + backdrop.G * (1 - amount)),
+                    (int)(source.B * amount + backdrop.B * (1 - amount)));
         }
 
         /// <summary>§12: three-dot menu — "Complete task" / "Duplicate task" / separator /
@@ -2041,27 +2153,6 @@ namespace VibeAlarm.UI.Forms
             label.Text = string.Join(hairSpace.ToString(), label.Text.ToCharArray());
         }
 
-        /// <summary>Status-bar action (SNOOZE / DISMISS). A bordered chip — quiet fill at rest,
-        /// hairline border so it reads as a button rather than a bare hyperlink (§15.2).</summary>
-        private Button CreateStatusActionButton(string text, Color ink)
-        {
-            Button btn = new Button
-            {
-                Text = text,
-                FlatStyle = FlatStyle.Flat,
-                Font = VibeAlarmPalette.Body(10F, FontStyle.Bold),
-                BackColor = Color.Transparent,
-                ForeColor = ink,
-                Cursor = Cursors.Hand
-            };
-            btn.FlatAppearance.BorderSize = 1;
-            btn.FlatAppearance.BorderColor = BorderColor;
-            btn.FlatAppearance.MouseOverBackColor = CardHoverBg;
-            btn.FlatAppearance.MouseDownBackColor = Shade(CardHoverBg, 0.9F);
-            RoundControl(btn, DesignTokens.Radius.Small);
-            return btn;
-        }
-
         /// <summary>Lightens (&gt; 1) or darkens (&lt; 1) a color toward its gray value, theme-aware.</summary>
         private static Color Shade(Color color, float amount)
         {
@@ -2140,63 +2231,15 @@ namespace VibeAlarm.UI.Forms
 
             if (scheduler.NextUp == null)
             {
-                lblNextUpTime.Text = "--:-- --";
-                lblNextUpName.Text = "No upcoming schedules.";
-                lblNextUpCountdown.Text = "—";
+                lblNextUpTime.Text = "Nothing scheduled";
+                lblNextUpName.Text = "Double-click any day on the calendar to plan your next task.";
+                lblNextUpCountdown.Text = string.Empty;
                 return;
             }
 
             lblNextUpTime.Text = AlarmEngine.GetScheduledTimeLabel(scheduler.NextUp);
             lblNextUpName.Text = scheduler.NextUp.Title;
             lblNextUpCountdown.Text = FormatCountdown(scheduler.Countdown);
-        }
-
-        /// <summary>Keeps the app-wide status bar in sync with the scheduler's Next Up / countdown.</summary>
-        private void UpdateNextStatusBar()
-        {
-            if (statusBarPanel == null || statusBarPanel.IsDisposed)
-            {
-                return;
-            }
-
-            bool hasNext = scheduler.NextUp != null;
-            btnStatusSnooze.Visible = hasNext;
-            btnStatusDismiss.Visible = hasNext;
-
-            if (!hasNext)
-            {
-                lblStatusNextUpName.Text = "No upcoming schedules.";
-                lblStatusNextUpTime.Text = "";
-                lblStatusNextUpCountdown.Text = "—";
-                return;
-            }
-
-            lblStatusNextUpName.Text = scheduler.NextUp!.Title;
-            lblStatusNextUpTime.Text = AlarmEngine.GetScheduledTimeLabel(scheduler.NextUp);
-            lblStatusNextUpCountdown.Text = FormatCountdown(scheduler.Countdown);
-        }
-
-        private void SnoozeFromStatusBar()
-        {
-            if (scheduler.NextUp == null)
-            {
-                return;
-            }
-            scheduler.Snooze(scheduler.NextUp, TimeSpan.FromMinutes(9), clock.Now);
-            RefreshDataCounters(); // persists the postponed schedule
-        }
-
-        private void DismissFromStatusBar()
-        {
-            if (scheduler.NextUp == null)
-            {
-                return;
-            }
-            var target = scheduler.NextUp;
-            target.SetState(TaskState.Completed);
-            TaskStorageService.Save(masterTaskList);
-            scheduler.CheckTransitions(clock.Now); // recomputes Next Up (skips completed task)
-            RefreshDataCounters();
         }
 
         private static string FormatCountdown(TimeSpan remaining)
@@ -2239,15 +2282,13 @@ namespace VibeAlarm.UI.Forms
             {
                 RefreshDataCounters(); // also persists (RefreshDataCounters saves)
                 UpdateNextUpDisplay();
-                UpdateNextStatusBar();
             };
 
-            // Next Up / countdown changes update both the dedicated NEXT UP block and the
-            // app-wide status bar (targeted, cheap updates — no scanning).
+            // Next Up / countdown changes update the dedicated NEXT UP block (targeted, cheap
+            // updates — no scanning).
             scheduler.NextUpChanged += (task, remaining) =>
             {
                 UpdateNextUpDisplay();
-                UpdateNextStatusBar();
             };
 
             // A single 1-second timer drives the live clock. The TimeService turns each second
@@ -2288,7 +2329,6 @@ namespace VibeAlarm.UI.Forms
                 RefreshDataCounters();
                 UpdateNextUpDisplay();
             }
-            UpdateNextStatusBar();
         }
 
         private void OnClockEngineTick(object? sender, EventArgs e)
@@ -2311,12 +2351,25 @@ namespace VibeAlarm.UI.Forms
                 {
                     if (tray != null && tray.IsHidden)
                     {
-                        // Window not visible — surface the alarm as a tray balloon so it isn't missed.
+                        // Window not visible — surface the alarm as a tray balloon so it isn't
+                        // missed. (A balloon can't take a snooze answer; restoring the window
+                        // keeps the task one click away to complete or reschedule.)
                         tray.ShowToast("Alarm", $"\"{task.Title}\" is alerting.", ToolTipIcon.Warning);
                     }
                     else
                     {
-                        MessageBox.Show($"Alarm Triggered:\n\n\"{task.Title}\"", "Alarm Alert", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        // Snooze lives HERE now (the former bottom status bar was removed): the
+                        // prompt appears exactly when the alarm fires, where the decision is made.
+                        DialogResult answer = MessageBox.Show(
+                            $"Alarm Triggered:\n\n\"{task.Title}\"\n\nSnooze for 9 minutes?",
+                            "Alarm Alert",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning);
+                        if (answer == DialogResult.Yes)
+                        {
+                            scheduler.Snooze(task, TimeSpan.FromMinutes(9), clock.Now);
+                            RefreshDataCounters(); // persists the postponed schedule
+                        }
                     }
                 }
             }
@@ -2347,10 +2400,23 @@ namespace VibeAlarm.UI.Forms
         private void ApplyTheme(ThemePreset newTheme)
         {
             currentTheme = newTheme;
+            // Keep the SHARED singleton in sync — ApplyTheme is the one application point for
+            // every theme change (startup, the Settings dropdown, settings commits, OS theme
+            // flips), but ResolveEffective() is a pure function that never sets Current. Without
+            // this line, every consumer that reads ThemeService.Shared.Current (Settings page,
+            // dialogs, the control factory, scrollbar theming) silently fell back to the Light
+            // preset while MainForm rendered from its own local field — the two stayed in sync
+            // only at startup (ActivateEffectiveFromSettings).
+            themeService.Current = newTheme;
 
-            // Persistent container backgrounds
+            // Persistent container backgrounds. The FORM's BackColor is the scrim the
+            // background image blends over — it must follow the theme. mainContainer stays
+            // transparent (see BuildDesktopInterface) so the image shows site-wide.
             BackColor = currentTheme.PrimaryBg;
-            if (mainContainer != null) mainContainer.BackColor = currentTheme.PrimaryBg;
+
+            // The persistent scroll host's native scrollbar follows the theme; the view
+            // panels below are rebuilt by RenderActiveView and re-track themselves.
+            if (contentPanel != null) NativeScrollbarTheme.Reapply(contentPanel);
 
             // Persistent header controls
             if (lblGreeting != null) lblGreeting.ForeColor = currentTheme.TextColor;
@@ -2417,9 +2483,10 @@ namespace VibeAlarm.UI.Forms
             ApplyTheme(themeService.ResolveEffective(mode));
         }
 
-        /// <summary>§24: re-applies appearance settings (transparency / radius / density) and
-        /// the effective theme after any settings commit. Slider drags call the cheaper
-        /// <see cref="RefreshGlassSurfaces"/> live and this on release.</summary>
+        /// <summary>Re-applies live settings on a Settings commit: refreshes the Animations
+        /// snapshot, the system theme, and the effective theme. Transparency/radius/density are
+        /// locked constants now, so there is no per-slider preview path anymore — commits are
+        /// the only trigger.</summary>
         private void ApplyAppearanceSettings()
         {
             AppSettings settings = SettingsService.Load();
@@ -2432,23 +2499,19 @@ namespace VibeAlarm.UI.Forms
         }
 
         /// <summary>Recomputes the translucent ARGB surfaces of the persistent chrome (sidebar,
-        /// status bar, progress card). All alpha math flows through GlassSurface — no ARGB here.</summary>
+        /// status bar, progress card). All alpha math flows through GlassSurface — no ARGB here.
+        /// The percentages are locked constants now, so this runs on theme changes rather than
+        /// slider drags, but it stays the one hook for refreshing the chrome surfaces.</summary>
         private void RefreshGlassSurfaces()
         {
-            AppSettings settings = Appearance.Current;
             if (sidebarPanel != null)
             {
-                sidebarPanel.FillColor = GlassSurface.SidebarFill(currentTheme, settings);
-            }
-            if (statusBarPanel != null)
-            {
-                statusBarPanel.FillColor = GlassSurface.PanelFill(currentTheme, settings);
-                statusBarPanel.Invalidate(); // repaint the hairline top border
+                sidebarPanel.FillColor = GlassSurface.SidebarFill(currentTheme);
             }
             if (sidebarProgressCard != null)
             {
-                sidebarProgressCard.FillColor = GlassSurface.CardFill(currentTheme, settings);
-                sidebarProgressCard.BorderColor = GlassSurface.CardBorder(currentTheme, settings);
+                sidebarProgressCard.FillColor = GlassSurface.CardFill(currentTheme);
+                sidebarProgressCard.BorderColor = GlassSurface.CardBorder(currentTheme);
             }
             if (navFlow != null)
             {

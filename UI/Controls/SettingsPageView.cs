@@ -12,14 +12,15 @@ namespace VibeAlarm.UI.Controls
 {
     /// <summary>
     /// The application settings page (§19–24 of the orientation redesign): a vertically
-    /// scrolling list of section cards (Appearance, Interface, Notifications, Data, System,
-    /// Background, About), each holding structured two-column rows — setting name + short
-    /// description on the left (~60%), the control on the right (~40%). No fixed coordinates.
+    /// scrolling list of section cards (Appearance, Notifications, Data, System, Background,
+    /// About), each holding structured two-column rows — setting name + short description on
+    /// the left (~60%), the control on the right (~40%). No fixed coordinates.
     ///
-    /// Transparency sliders expose friendly 0–100% values (0% = opaque) with a live percentage
-    /// label; the alpha math lives in <see cref="GlassSurface"/>. While a slider is being
-    /// dragged, only <paramref name="onAppearancePreview"/> fires (cheap chrome refresh) so
-    /// the control under the pointer is never rebuilt mid-drag; committing happens on release.
+    /// The former transparency/radius/density sliders are gone — those values are locked
+    /// design constants now (see <see cref="GlassSurface"/> and
+    /// <see cref="VibeAlarm.UI.Theming.Appearance"/>), so the page exposes only behavior
+    /// controls. The remaining slider (background visibility) shows a live percentage label
+    /// and persists on release.
     ///
     /// All mutations go through the <paramref name="getTasks"/>/callback delegates so the page
     /// owns no business logic — MainForm keeps the master task list, persistence, and theme
@@ -32,7 +33,6 @@ namespace VibeAlarm.UI.Controls
         private readonly Func<IList<TaskItem>> getTasks;
         private readonly Action<string> onThemeModeChanged;
         private readonly Action onAppearanceCommitted;
-        private readonly Action onAppearancePreview;
         private readonly Action onDataChanged;
 
         /// <summary>Working copy of the settings — every control mutates this, every commit
@@ -49,13 +49,11 @@ namespace VibeAlarm.UI.Controls
             Func<IList<TaskItem>> getTasks,
             Action<string> onThemeModeChanged,
             Action onAppearanceCommitted,
-            Action onAppearancePreview,
             Action onDataChanged)
         {
             this.getTasks = getTasks;
             this.onThemeModeChanged = onThemeModeChanged;
             this.onAppearanceCommitted = onAppearanceCommitted;
-            this.onAppearancePreview = onAppearancePreview;
             this.onDataChanged = onDataChanged;
             editState = SettingsService.Load();
 
@@ -65,6 +63,9 @@ namespace VibeAlarm.UI.Controls
         private void Build()
         {
             AutoScroll = true;
+            // Native scrollbar follows the active theme (this surface is the scroller —
+            // scrollContent is a Dock.Top child that grows it).
+            NativeScrollbarTheme.Track(this);
             BackColor = Color.Transparent;
             Padding = new Padding(0, DesignTokens.Spacing.Sm, 0, DesignTokens.Spacing.Lg);
 
@@ -82,24 +83,8 @@ namespace VibeAlarm.UI.Controls
             AddSection("Appearance", "Choose how VibeAlarm looks.", rows =>
             {
                 rows.Add(BuildThemeRow());
-                rows.Add(BuildSliderRow("Glass transparency",
-                    "How see-through the main glass surfaces appear. 0% is solid.",
-                    s => s.GlassTransparency, (s, v) => s.GlassTransparency = v));
-                rows.Add(BuildSliderRow("Panel opacity",
-                    "Transparency of raised panels like the sidebar and status bar.",
-                    s => s.PanelTransparency, (s, v) => s.PanelTransparency = v));
-                rows.Add(BuildSliderRow("Card opacity",
-                    "Transparency of task cards and content surfaces.",
-                    s => s.CardTransparency, (s, v) => s.CardTransparency = v));
-                rows.Add(BuildSliderRow("Border opacity",
-                    "Transparency of the hairline borders around surfaces.",
-                    s => s.BorderTransparency, (s, v) => s.BorderTransparency = v));
-            });
-
-            AddSection("Interface", "Layout density, rounding, and motion.", rows =>
-            {
-                rows.Add(BuildCornerRadiusRow());
-                rows.Add(BuildDensityRow());
+                // Relocated from the removed "Interface" section — Animations is a live
+                // behavior toggle, not one of the stripped layout dials.
                 rows.Add(BuildToggleRow("Animations",
                     "Smooth hover and press transitions on buttons.",
                     s => s.EnableAnimations, (s, v) => s.EnableAnimations = v));
@@ -138,11 +123,10 @@ namespace VibeAlarm.UI.Controls
                     "Desaturate the background image so content stays readable.",
                     s => s.ApplyMonochromeFilterToBackground, (s, v) => s.ApplyMonochromeFilterToBackground = v,
                     commit: true));
-                rows.Add(BuildSliderRow("Background opacity",
-                    "How strongly the background image shows through.",
+                rows.Add(BuildSliderRow("Background visibility",
+                    "How strongly the blurred background shows through the theme (0-100%).",
                     s => (int)Math.Round(s.BackgroundOpacity * 100),
-                    (s, v) => s.BackgroundOpacity = v / 100.0,
-                    livePreview: false));
+                    (s, v) => s.BackgroundOpacity = v / 100.0));
             });
 
             AddSection("About", string.Empty, rows =>
@@ -166,8 +150,8 @@ namespace VibeAlarm.UI.Controls
                 AutoSize = true,
                 Padding = new Padding(DesignTokens.Spacing.Lg, 18, DesignTokens.Spacing.Lg, 18),
                 Margin = new Padding(0, 0, 0, DesignTokens.Spacing.Md),
-                FillColor = GlassSurface.SectionFill(Theme, editState),
-                BorderColor = GlassSurface.PanelBorder(Theme, editState),
+                FillColor = GlassSurface.SectionFill(Theme),
+                BorderColor = GlassSurface.PanelBorder(Theme),
                 BorderThickness = 1,
                 BorderRadius = Appearance.CardRadius,
                 BackColor = Color.Transparent
@@ -294,7 +278,7 @@ namespace VibeAlarm.UI.Controls
                 index = 0;
             }
 
-            Guna2ComboBox dropdown = UIControlFactory.CreateDropdown(modes, index, preset: Theme);
+            ComboBox dropdown = UIControlFactory.CreateDropdown(modes, index, preset: Theme);
             dropdown.Width = 140;
             dropdown.SelectedIndexChanged += (s, e) =>
             {
@@ -306,14 +290,13 @@ namespace VibeAlarm.UI.Controls
             return CreateSettingsRow("Theme", "Light, dark, or follow your Windows setting.", dropdown);
         }
 
-        /// <summary>Slider row with a live percentage label. Continuous drags update the label
-        /// and preview only; the value persists and the app re-renders when the drag ends.</summary>
+        /// <summary>Slider row with a live percentage label. Drags update the label only; the
+        /// value persists and the app re-renders when the drag ends.</summary>
         private Control BuildSliderRow(
             string name,
             string description,
             Func<AppSettings, int> getValue,
             Action<AppSettings, int> setValue,
-            bool livePreview = true,
             int minimum = 0,
             int maximum = 100)
         {
@@ -351,11 +334,6 @@ namespace VibeAlarm.UI.Controls
                 int v = Math.Clamp(slider.Value, minimum, maximum);
                 setValue(editState, v);
                 lblValue.Text = $"{v}%";
-                if (livePreview)
-                {
-                    RefreshGlassSurfacesLocal();
-                    onAppearancePreview();
-                }
             };
             slider.MouseUp += (s, e) =>
             {
@@ -366,35 +344,6 @@ namespace VibeAlarm.UI.Controls
             };
 
             return CreateSettingsRow(name, description, holder);
-        }
-
-        private Control BuildCornerRadiusRow()
-        {
-            return BuildSliderRow("Corner radius",
-                "How rounded cards and controls are.",
-                s => s.CornerRadius,
-                (s, v) => s.CornerRadius = v,
-                minimum: 0, maximum: 20);
-        }
-
-        private Control BuildDensityRow()
-        {
-            string[] densities = { "Comfortable", "Compact" };
-            int index = Array.FindIndex(densities, d => string.Equals(d, editState.Density, StringComparison.OrdinalIgnoreCase));
-            if (index < 0)
-            {
-                index = 0;
-            }
-
-            Guna2ComboBox dropdown = UIControlFactory.CreateDropdown(densities, index, preset: Theme);
-            dropdown.Width = 140;
-            dropdown.SelectedIndexChanged += (s, e) =>
-            {
-                editState.Density = dropdown.SelectedIndex >= 0 ? densities[dropdown.SelectedIndex] : "Comfortable";
-                SettingsService.Save(editState);
-                BeginInvoke(onAppearanceCommitted);
-            };
-            return CreateSettingsRow("Density", "Comfortable spacing, or a compact layout that fits more.", dropdown);
         }
 
         /// <summary>Toggle row. Toggles that only change persisted behavior save immediately;
@@ -637,29 +586,11 @@ namespace VibeAlarm.UI.Controls
 
         // ---- helpers ----
 
-        /// <summary>Live glass refresh for this page's own section cards during slider drags
-        /// (the persistent chrome is refreshed by the host via the preview callback).</summary>
-        private void RefreshGlassSurfacesLocal()
-        {
-            foreach (Guna2Panel card in sectionCards)
-            {
-                card.FillColor = GlassSurface.SectionFill(Theme, editState);
-                card.BorderColor = GlassSurface.PanelBorder(Theme, editState);
-                card.Invalidate();
-            }
-        }
-
         private void ResetEditState(AppSettings defaults)
         {
             // Keep identity-ish fields that a "reset" shouldn't erase (task data lives elsewhere).
             editState.SchemaVersion = defaults.SchemaVersion;
             editState.Theme = defaults.Theme;
-            editState.GlassTransparency = defaults.GlassTransparency;
-            editState.PanelTransparency = defaults.PanelTransparency;
-            editState.CardTransparency = defaults.CardTransparency;
-            editState.BorderTransparency = defaults.BorderTransparency;
-            editState.CornerRadius = defaults.CornerRadius;
-            editState.Density = defaults.Density;
             editState.EnableAnimations = defaults.EnableAnimations;
             editState.EnableNotifications = defaults.EnableNotifications;
             editState.EnableAlarmSound = defaults.EnableAlarmSound;

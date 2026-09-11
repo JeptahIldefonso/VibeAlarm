@@ -50,14 +50,10 @@ namespace VibeAlarm.Services
 
                     if (settings != null)
                     {
-                        // Forgive stored values out of the valid ranges.
+                        // Forgive stored values out of the valid ranges. (The former appearance
+                        // ints — transparency/radius/density — are gone from the schema; extra
+                        // JSON keys from older settings.json are simply ignored on deserialize.)
                         settings.BackgroundOpacity = Math.Clamp(settings.BackgroundOpacity, 0.0, 1.0);
-                        // Appearance ints (§24): transparency percentages 0–100, radius 0–20px.
-                        settings.GlassTransparency = Math.Clamp(settings.GlassTransparency, 0, 100);
-                        settings.PanelTransparency = Math.Clamp(settings.PanelTransparency, 0, 100);
-                        settings.CardTransparency = Math.Clamp(settings.CardTransparency, 0, 100);
-                        settings.BorderTransparency = Math.Clamp(settings.BorderTransparency, 0, 100);
-                        settings.CornerRadius = Math.Clamp(settings.CornerRadius, 0, 20);
                         return settings;
                     }
                 }

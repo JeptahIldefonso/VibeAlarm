@@ -12,21 +12,20 @@ namespace VibeAlarm.UI.Controls
     /// <summary>
     /// Glass-surface and icon extensions to the control factory. Every translucent ARGB surface
     /// color is computed here via <see cref="GlassSurface"/> (the single home of transparency
-    /// math) so no form ever mixes its own alpha. Effective corner radii and density come from
-    /// <see cref="Appearance"/> (the live settings snapshot) instead of the static defaults.
+    /// math) so no form ever mixes its own alpha. Corner radii and density are locked design
+    /// constants in <see cref="Appearance"/>.
     /// </summary>
     public static partial class UIControlFactory
     {
         /// <summary>Content card surface (task rows, headers, info blocks): glass card fill +
-        /// glass hairline border, rounded per the user's corner-radius setting.</summary>
-        public static Guna2Panel CreateCardPanel(ThemePreset? preset = null, AppSettings? settings = null)
+        /// glass hairline border, square corners per the locked card radius.</summary>
+        public static Guna2Panel CreateCardPanel(ThemePreset? preset = null)
         {
             var p = preset ?? Active();
-            var s = settings ?? Appearance.Current;
             Guna2Panel panel = new Guna2Panel
             {
-                FillColor = GlassSurface.CardFill(p, s),
-                BorderColor = GlassSurface.CardBorder(p, s),
+                FillColor = GlassSurface.CardFill(p),
+                BorderColor = GlassSurface.CardBorder(p),
                 BorderThickness = 1,
                 BorderRadius = Appearance.CardRadius
             };
@@ -35,15 +34,14 @@ namespace VibeAlarm.UI.Controls
         }
 
         /// <summary>Raised panel surface (status bar, toolbars, hero areas): slightly more
-        /// present than cards, still translucent per the panel transparency setting.</summary>
-        public static Guna2Panel CreatePanelSurface(ThemePreset? preset = null, AppSettings? settings = null)
+        /// present than cards, still translucent per the locked panel transparency.</summary>
+        public static Guna2Panel CreatePanelSurface(ThemePreset? preset = null)
         {
             var p = preset ?? Active();
-            var s = settings ?? Appearance.Current;
             Guna2Panel panel = new Guna2Panel
             {
-                FillColor = GlassSurface.PanelFill(p, s),
-                BorderColor = GlassSurface.PanelBorder(p, s),
+                FillColor = GlassSurface.PanelFill(p),
+                BorderColor = GlassSurface.PanelBorder(p),
                 BorderThickness = 1,
                 BorderRadius = Appearance.CardRadius
             };

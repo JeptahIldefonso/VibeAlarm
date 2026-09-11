@@ -25,33 +25,48 @@ namespace VibeAlarm.UI.Forms
 
         private readonly IClock clock;
 
+        /// <summary>Active preset (same source the control factory reads) — every canvas color
+        /// (surface, text, validation, calendar dropdown) derives from it so the modal always
+        /// matches the running theme.</summary>
+        private ThemePreset preset => ThemeService.Shared.Current ?? ThemeService.Shared.Default;
+
         public TaskItem GeneratedTask { get; private set; } = null!;
 
         private Guna2TextBox txtInput = null!;
         private DateTimePicker dtpScheduleDate = null!;
-        private Guna2ComboBox cmbType = null!;
-        private Guna2ComboBox cmbHr = null!;
-        private Guna2ComboBox cmbMin = null!;
-        private Guna2ComboBox cmbAmPm = null!;
+        private ComboBox cmbType = null!;
+        private ComboBox cmbHr = null!;
+        private ComboBox cmbMin = null!;
+        private ComboBox cmbAmPm = null!;
         private Guna2Button btnSave = null!;
         private Guna2Button btnCancel = null!;
         private Label lblValidation = null!;
 
-        public TaskCreateDialog(IClock? clock = null)
+        /// <param name="prefillDate">Optional day to pre-select (calendar click-to-schedule).
+        /// Past days cannot be scheduled (MinDate + future validation), so they clamp to today.</param>
+        public TaskCreateDialog(IClock? clock = null, DateTime? prefillDate = null)
         {
             this.clock = clock ?? new Clock();
             InitializeDialogCanvas();
+            if (prefillDate.HasValue && prefillDate.Value.Date >= DateTime.Today &&
+                prefillDate.Value.Date <= dtpScheduleDate.MaxDate)
+            {
+                dtpScheduleDate.Value = prefillDate.Value.Date;
+            }
         }
 
         private void InitializeDialogCanvas()
         {
             Text = "Create Task";
-            ClientSize = new Size(560, 400);
+            // Initial size only — the real height is MEASURED from the layout at the bottom of
+            // this method (preferred height of the AutoSize rows at the current font/DPI), so
+            // the buttons can never be starved by content growth or DPI scaling.
+            ClientSize = new Size(560, 464);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            BackColor = VibeAlarmPalette.Background;
+            BackColor = preset.SurfaceElevated;
             Font = VibeAlarmPalette.Body(10F);
 
             // §34: layout containers, not coordinates — header, full-width name field, a
@@ -60,7 +75,7 @@ namespace VibeAlarm.UI.Forms
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 8,
+                RowCount = 9,
                 BackColor = Color.Transparent,
                 Padding = new Padding(28, 20, 28, 20)
             };
@@ -72,7 +87,11 @@ namespace VibeAlarm.UI.Forms
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // schedule flow
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // type label
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // type row
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // actions
+            // FILLER before the actions row: it absorbs all spare space (pinning the buttons to
+            // the bottom) and is the row that collapses when space runs short — the buttons'
+            // AutoSize row always keeps its preferred height at any DPI or content growth.
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // filler
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // actions
 
             // ---- Header ----
             TableLayoutPanel header = new TableLayoutPanel
@@ -92,7 +111,7 @@ namespace VibeAlarm.UI.Forms
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true,
                 Font = VibeAlarmPalette.Display(16F, FontStyle.Bold),
-                ForeColor = VibeAlarmPalette.TextPrimary,
+                ForeColor = preset.TextColor,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0)
             }, 0, 0);
@@ -102,7 +121,7 @@ namespace VibeAlarm.UI.Forms
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true,
                 Font = VibeAlarmPalette.Body(9F),
-                ForeColor = VibeAlarmPalette.TextSecondary,
+                ForeColor = preset.MutedTextColor,
                 BackColor = Color.Transparent,
                 Margin = new Padding(0, 3, 0, 0)
             }, 0, 1);
@@ -126,10 +145,12 @@ namespace VibeAlarm.UI.Forms
                 // Past dates are not schedulable — a schedule is a FUTURE event.
                 MinDate = DateTime.Today,
                 MaxDate = DateTime.Today.AddYears(5),
-                CalendarForeColor = VibeAlarmPalette.TextPrimary,
-                CalendarMonthBackground = VibeAlarmPalette.Surface,
-                CalendarTitleBackColor = VibeAlarmPalette.TextPrimary,
-                CalendarTitleForeColor = VibeAlarmPalette.Surface,
+                // The dropdown calendar follows the preset (the DTP's own field is drawn by
+                // Windows and only honors these Calendar* properties).
+                CalendarForeColor = preset.TextColor,
+                CalendarMonthBackground = preset.CardBgColor,
+                CalendarTitleBackColor = preset.AccentColor,
+                CalendarTitleForeColor = Color.White,
                 Font = VibeAlarmPalette.Body(9.5F),
                 Width = 154,
                 Margin = new Padding(0, 0, DesignTokens.Spacing.Md, 0)
@@ -175,7 +196,7 @@ namespace VibeAlarm.UI.Forms
                 AutoSize = true,
                 MaximumSize = new Size(260, 0),
                 Font = VibeAlarmPalette.Mono(8F),
-                ForeColor = VibeAlarmPalette.Error,
+                ForeColor = preset.ErrorColor,
                 BackColor = Color.Transparent,
                 Visible = false,
                 Margin = new Padding(0, 12, 0, 0)
@@ -232,9 +253,10 @@ namespace VibeAlarm.UI.Forms
             actions.Controls.Add(btnSave);
             actionsRow.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent }, 0, 0);
             actionsRow.Controls.Add(actions, 1, 0);
-            root.Controls.Add(actionsRow, 0, 7);
+            root.Controls.Add(actionsRow, 0, 8);
 
-            // Keyboard accessibility: Escape cancels, Enter submits (unless focus is on Cancel).
+            // Keyboard accessibility: Escape cancels, Enter submits (unless focus is on Cancel
+            // or a dropdown — Enter there confirms the dropdown's selection, never the form).
             KeyPreview = true;
             KeyDown += (s, e) =>
             {
@@ -244,26 +266,43 @@ namespace VibeAlarm.UI.Forms
                     btnCancel.PerformClick();
                     e.Handled = true;
                 }
+                else if (e.KeyCode == Keys.Enter && ActiveControl is ComboBox)
+                {
+                    e.Handled = true; // suppress AcceptButton; the dropdown keeps focus
+                }
             };
             AcceptButton = btnSave;
             CancelButton = btnCancel;
 
             Controls.Add(root);
+
+            // Size from measurement, not a guess: the layout's preferred height is the sum of
+            // the AutoSize rows (the Percent filler contributes nothing) at the CURRENT font
+            // and DPI — so the dialog always fits its content at 100–150% scaling without
+            // hand-tuned constants. The validation message is measured too: temporarily show
+            // the real worst-case text so its wrapped height is reserved BEFORE it ever
+            // appears. The 464 floor keeps comfortable breathing room; the filler row above
+            // the buttons soaks any surplus.
+            lblValidation.Text = "Schedule time must be in the future.";
+            int measuredHeight = root.GetPreferredSize(new Size(560, 0)).Height;
+            lblValidation.Text = string.Empty;
+            ClientSize = new Size(560, Math.Max(464, measuredHeight));
         }
 
-        /// <summary>Small uppercase field caption (task name / schedule / type).</summary>
-        private static Label CreateFieldLabel(string text) => new()
+        /// <summary>Small uppercase field caption (task name / schedule / type) — muted token,
+        /// never the primary ink, so captions stay subordinate to values.</summary>
+        private Label CreateFieldLabel(string text) => new()
         {
             Text = text,
             Dock = DockStyle.Fill,
             AutoEllipsis = true,
             Font = VibeAlarmPalette.Mono(8.5F, FontStyle.Bold),
-            ForeColor = VibeAlarmPalette.TextPrimary,
+            ForeColor = preset.MutedTextColor,
             BackColor = Color.Transparent,
             Margin = new Padding(0)
         };
 
-        private Guna2ComboBox CreateDropdown(string[] items, int idx)
+        private ComboBox CreateDropdown(string[] items, int idx)
             => UIControlFactory.CreateDropdown(items, selectedIndex: idx);
 
         private void OnSaveSubmitted(object? sender, EventArgs e)
