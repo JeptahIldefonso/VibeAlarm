@@ -88,5 +88,22 @@ namespace VibeAlarm.Tests
             var preset = ThemeService.Shared.FindByName("Dark")!;
             Assert.Equal(255, GlassSurface.CardHover(preset).A);
         }
+
+        [Fact]
+        public void Task_card_glass_is_a_separate_surface_from_the_shared_card_token()
+        {
+            var preset = ThemeService.Shared.FindByName("Dark")!;
+
+            // The SHARED card token stays fully opaque — Dashboard and Settings section cards
+            // depend on that and must not regress when task rows go glassy.
+            Assert.Equal(255, GlassSurface.CardFill(preset).A);
+
+            // Task rows get their own tinted-glass surface: translucent (not opaque), floored
+            // for text readability, RGB from the preset untouched.
+            Color task = GlassSurface.TaskCardFill(preset);
+            Assert.Equal(GlassSurface.AlphaFromPercent(35, GlassSurface.TaskCardMinAlpha), task.A);
+            Assert.InRange(task.A, GlassSurface.TaskCardMinAlpha, 255);
+            Assert.Equal((Color.FromArgb(255, preset.CardBgColor)).R, task.R);
+        }
     }
 }

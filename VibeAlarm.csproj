@@ -25,6 +25,16 @@
     <EmbeddedResource Include="Assets\Fonts\*.ttf" />
   </ItemGroup>
 
+  <!-- Vector icons follow the same embedding pattern as the fonts above (embedded, not copied:
+       IconSet rasterizes them from the manifest at runtime, and a single-file publish has no
+       reliable on-disk Assets path). Excluded from the None glob to avoid double-include.
+       archery.svg deliberately does NOT live here — it is parked at Assets\archery.svg pending
+       a confirmed use case (no goals/focus feature exists yet). -->
+  <ItemGroup>
+    <None Remove="Assets\Icons\*.svg" />
+    <EmbeddedResource Include="Assets\Icons\*.svg" />
+  </ItemGroup>
+
   <!-- The installer build script stages a generated installer project under
        build_staging\ (and dotnet publish output under publish\), and the xUnit test
        project lives under tests\. These directories sit inside this project's tree, so
@@ -37,6 +47,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Guna.UI2.WinForms" Version="2.0.4.8" />
+    <!-- SVG.NET rasterizes the embedded vector icons (GDI+ has no native SVG support; the
+         package recolors fills at render time so icons follow the theme like glyphs do).
+         MIT-licensed. If this pinned version fails to restore, run: dotnet add package Svg -->
+    <PackageReference Include="Svg" Version="3.4.7" />
   </ItemGroup>
 
 </Project>

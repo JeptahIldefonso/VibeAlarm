@@ -79,6 +79,10 @@ namespace VibeAlarm.UI.Forms
         // Header Input Items
         private Guna2TextBox txtSearch = null!;
         private Guna2Button btnNewTask = null!;
+        // Circular floating "New Task" action on the Tasks view (replaces the header button
+        // there). Parented to mainContainer — NOT the AutoScroll content host — so it never
+        // scrolls with the list and never falls behind rebuilt list content.
+        private FloatingActionButton? taskFab;
 
         // Navigation Group Links
         private Guna2Button btnDashboard = null!;
@@ -91,8 +95,12 @@ namespace VibeAlarm.UI.Forms
             ["Dashboard"] = IconKind.Dashboard,
             ["Tasks"] = IconKind.Tasks,
             ["Calendar"] = IconKind.Calendar,
-            ["Ambient"] = IconKind.Volume,
-            ["Settings"] = IconKind.Settings
+            // Ambient renders the SoundWave vector (waveform-path.svg) — the view is about
+            // background SOUND, and the speaker glyph (Volume) is its degraded fallback.
+            ["Ambient"] = IconKind.SoundWave,
+            // Settings renders the UserPreferences vector (user-skill-gear.svg) — the standard
+            // gear glyph (IconKind.Settings) is its degraded fallback.
+            ["Settings"] = IconKind.UserPreferences
         };
 
         // Interactive Labels — lblGreeting doubles as the per-view page title (§4 hierarchy).
@@ -530,6 +538,29 @@ namespace VibeAlarm.UI.Forms
             mainContainer.Controls.Add(contentPanel);
             mainContainer.Controls.Add(headerPanel);
 
+            // Floating "New Task" action for the Tasks view — a circular FAB pinned over the
+            // content area's bottom-right corner. Lives on mainContainer (the NON-scrolling
+            // host), never on contentPanel: an anchored child of an AutoScroll panel scrolls
+            // with the content and gets clipped off-screen; this way it stays fixed on screen
+            // at any scroll position. Visibility is driven per-view by RenderActiveView.
+            taskFab = new FloatingActionButton(currentTheme.AccentColor)
+            {
+                Visible = false
+            };
+            taskFab.Click += (s, e) => { ExecuteModalTaskCreationDialogue(); };
+            mainContainer.Controls.Add(taskFab);
+            taskFab.BringToFront(); // always paints above the scrollable list
+            // Re-pin on every resize AND re-assert z-order: cheap, and it guarantees the FAB
+            // can never end up behind list content after a resize (spec re-test case).
+            mainContainer.Resize += (s, e) =>
+            {
+                if (taskFab is { Visible: true })
+                {
+                    PositionTaskFab();
+                    taskFab.BringToFront();
+                }
+            };
+
             // Left: page title (Level 1) over supporting description (Level 2). The title
             // ellipsizes gracefully when the header narrows.
             TableLayoutPanel titleBlock = new TableLayoutPanel
@@ -666,9 +697,9 @@ namespace VibeAlarm.UI.Forms
                 // §14.3 pill: active = accent-tinted fill + accent glyph/ink; idle = transparent.
                 btn.FillColor = isCurrent ? currentTheme.AccentTintColor : Color.Transparent;
                 btn.ForeColor = isCurrent ? currentTheme.TextColor : MutedTextColor;
-                Image prev = btn.Image;
+                // NOTE: the previous Image is NOT disposed — IconSet.Render now returns
+                // SHARED cached bitmaps (see IconSet.Render's ownership contract).
                 btn.Image = IconSet.Render(NavIcons[key], isCurrent ? currentTheme.AccentColor : MutedTextColor, 20);
-                prev?.Dispose();
             }
 
             switch (activeView)
@@ -688,6 +719,24 @@ namespace VibeAlarm.UI.Forms
                 default:
                     RenderTaskView();
                     break;
+            }
+
+            // The Tasks view replaces the header's "New Task" button with the floating
+            // action button; every other view keeps the header button (their only creation
+            // affordance — Calendar also has per-day "Add task").
+            bool tasksViewActive = activeView == "Tasks";
+            if (taskFab != null)
+            {
+                taskFab.Visible = tasksViewActive;
+                if (tasksViewActive)
+                {
+                    PositionTaskFab();
+                    taskFab.BringToFront(); // list content was (re)added above
+                }
+            }
+            if (btnNewTask != null)
+            {
+                btnNewTask.Visible = !tasksViewActive;
             }
 
             contentPanel.ResumeLayout();
@@ -726,6 +775,34 @@ namespace VibeAlarm.UI.Forms
             };
             contentPanel.Controls.Add(taskListPanel);
             BindRowWidthToHost(taskListPanel);
+            // Row hosts paint on scroll/hover — flicker there reads as lag or overlap.
+            EnableFlickerFreePaint(taskListPanel);
+        }
+
+        /// <summary>Pins the FAB to the content area's bottom-right corner. Recomputed on
+        /// every resize and every view switch because the FAB is positioned by code, not by
+        /// Anchor — its parent is the non-scrolling mainContainer, and an Anchor inside the
+        /// AutoScroll content host would scroll it away with the list.</summary>
+        private void PositionTaskFab()
+        {
+            if (taskFab == null || contentPanel == null)
+            {
+                return;
+            }
+            taskFab.Location = new Point(
+                Math.Max(contentPanel.Left, contentPanel.Right - taskFab.Width - 28),
+                Math.Max(contentPanel.Top, contentPanel.Bottom - taskFab.Height - 28));
+        }
+
+        /// <summary>Turns on the flicker-free paint styles (OptimizedDoubleBuffer +
+        /// AllPaintingInWmPaint; UserPaint is already set on every container this is used on)
+        /// for row/list containers, so repeated paints during scroll and hover never flash.
+        /// DoubleBuffered is protected on Control, hence the reflection set.</summary>
+        private static void EnableFlickerFreePaint(Control control)
+        {
+            typeof(Control).GetProperty("DoubleBuffered",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.SetValue(control, true);
         }
 
         /// <summary>Keeps full-width rows (section headings, task cards) expanding with the
@@ -1751,7 +1828,11 @@ namespace VibeAlarm.UI.Forms
             // no per-item box, border, or radius; a 1px hairline divider separates neighbors,
             // and the ONLY visual distinction is the hover highlight. A Guna2Panel (not a
             // plain Panel) still hosts the row so Guna routes child-mouse messages to it,
-            // keeping the hover reliable with label children.
+            // keeping the hover reliable with label children. The resting fill is the task
+            // card's own TINT-ONLY glass token (GlassSurface.TaskCardFill) — a translucent
+            // wash the atmospheric background shows through; blur-behind is deliberately NOT
+            // simulated per-card (the lag risk on the most-rebuilt list in the app).
+            Color restFill = GlassSurface.TaskCardFill(currentTheme);
             Guna2Panel card = new Guna2Panel
             {
                 Size = new Size(rowWidth, cardHeight),
@@ -1760,11 +1841,14 @@ namespace VibeAlarm.UI.Forms
                 // Extra padding on the right (Lg vs Md): the trailing pill + "…" button
                 // must never touch the row edge — text shrinks with AutoEllipsis, they don't.
                 Padding = new Padding(DesignTokens.Spacing.Md, 0, DesignTokens.Spacing.Lg, 0),
-                FillColor = Color.Transparent,
+                FillColor = restFill,
                 BorderThickness = 0,
                 BorderRadius = 0,
                 BackColor = Color.Transparent
             };
+            // Rows repaint on every hover and scroll — the buffered styles stop the flicker
+            // that reads as lag or overlap.
+            EnableFlickerFreePaint(card);
 
             // Hairline divider on the row's bottom edge (drawn in Paint so it lands on top
             // of both the transparent rest state and the hover fill).
@@ -1785,8 +1869,8 @@ namespace VibeAlarm.UI.Forms
             };
             card.MouseLeave += (s, e) =>
             {
-                card.FillColor = Color.Transparent;
-                badge?.SetBackdrop(currentTheme.PrimaryBg);
+                card.FillColor = restFill;
+                badge?.SetBackdrop(restFill);
             };
 
             TableLayoutPanel row = new TableLayoutPanel
@@ -1800,11 +1884,13 @@ namespace VibeAlarm.UI.Forms
             // One Percent(100) row: all three columns measure against the SAME vertical
             // midpoint, so checkbox / text / trailing read as one centered unit.
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            EnableFlickerFreePaint(row);
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));   // checkbox column
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); // text column
             row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // type pill + more
 
-            // ---- Checkbox: quiet circle, filled check when completed ----
+            // ---- Checkbox: quiet circle — pending clock while open, filled clipboard-check
+            // when completed (the two SVG state icons; glyph path is their fallback). ----
             Guna2Button btnToggle = new Guna2Button
             {
                 Size = new Size(28, 28),
@@ -1819,8 +1905,13 @@ namespace VibeAlarm.UI.Forms
             };
             if (item.Completed)
             {
-                btnToggle.Image = IconSet.Render(IconKind.Check, currentTheme.IsLight ? Color.White : Color.FromArgb(0x19, 0x19, 0x19), 14);
-                btnToggle.ImageSize = new Size(14, 14);
+                btnToggle.Image = IconSet.Render(IconKind.TaskComplete, currentTheme.IsLight ? Color.White : Color.FromArgb(0x19, 0x19, 0x19), 16);
+                btnToggle.ImageSize = new Size(16, 16);
+            }
+            else
+            {
+                btnToggle.Image = IconSet.Render(IconKind.TaskPending, MutedTextColor, 16);
+                btnToggle.ImageSize = new Size(16, 16);
             }
             btnToggle.HoverState.BorderColor = TextColor;
             // Hover = border shift AND a quiet fill — an obvious-but-subtle cue matching the
@@ -1898,9 +1989,10 @@ namespace VibeAlarm.UI.Forms
             trailing.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30 + DesignTokens.Spacing.Md)); // … button + 16px gap
 
             // Status pill in the type's semantic color (Todoist/Linear tag pattern) — the
-            // type color is folded into fill + ink. Backdrop = the page background: the row
-            // itself is transparent at rest, and hover swaps the backdrop to the highlight.
-            TypeBadge typeBadge = new TypeBadge(item.Type, TypeDotColor(item), currentTheme.PrimaryBg, VibeAlarmPalette.Mono(8.5F, FontStyle.Bold));
+            // type color is folded into fill + ink. Backdrop = the row's resting glass fill
+            // (the pill's corners must match what the row paints under it); hover swaps the
+            // backdrop to the highlight.
+            TypeBadge typeBadge = new TypeBadge(item.Type, TypeDotColor(item), restFill, VibeAlarmPalette.Mono(8.5F, FontStyle.Bold));
             badge = typeBadge;
             typeBadge.Anchor = AnchorStyles.Left;
             badge.Margin = new Padding(0, 0, DesignTokens.Spacing.Md, 0);
@@ -2000,7 +2092,9 @@ namespace VibeAlarm.UI.Forms
 
             ToolStripMenuItem completeItem = new ToolStripMenuItem(item.Completed ? "Mark as not done" : "Complete task")
             {
-                Image = IconSet.Render(IconKind.Check, TextColor, 16)
+                // Same vector as the completed state on the row itself, so the action and its
+                // result read as one icon.
+                Image = IconSet.Render(IconKind.TaskComplete, TextColor, 16)
             };
             completeItem.Click += (src, ev) =>
             {
@@ -2409,6 +2503,16 @@ namespace VibeAlarm.UI.Forms
             // only at startup (ActivateEffectiveFromSettings).
             themeService.Current = newTheme;
 
+            // Every icon ink shifts with the theme — release the shared raster cache so it
+            // only ever holds one theme's worth of bitmaps (render results are cached by
+            // (kind, ink, size); the old-theme entries would otherwise sit stale forever).
+            IconSet.ClearCache();
+
+            // The FAB persists across themes (it lives on mainContainer, not the rebuilt
+            // view) — retint its disc; its cached shadow/face bitmaps rebuild once, on the
+            // next paint, only because the ink actually changed.
+            taskFab?.SetInk(currentTheme.AccentColor);
+
             // Persistent container backgrounds. The FORM's BackColor is the scrim the
             // background image blends over — it must follow the theme. mainContainer stays
             // transparent (see BuildDesktopInterface) so the image shows site-wide.
@@ -2429,9 +2533,9 @@ namespace VibeAlarm.UI.Forms
                 txtSearch.PlaceholderForeColor = currentTheme.MutedTextColor;
                 txtSearch.BorderColor = currentTheme.BorderColor;
                 txtSearch.FocusedState.BorderColor = currentTheme.TextColor;
-                Image? prevIcon = txtSearch.IconLeft;
+                // The old IconLeft is NOT disposed — IconSet.Render returns shared cached
+                // bitmaps now; the cache itself was cleared at the top of ApplyTheme.
                 txtSearch.IconLeft = IconSet.Render(IconKind.Search, currentTheme.MutedTextColor, 16);
-                prevIcon?.Dispose();
             }
 
             if (btnNewTask != null)
