@@ -74,9 +74,9 @@ namespace VibeAlarm
             ClientSize = new Size(1600, 1000);
             MinimumSize = new Size(1200, 820);
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            // The SPA is dark; a black host surface avoids a white flash before WebView2
-            // has painted anything.
-            BackColor = System.Drawing.Color.Black;
+            // The SPA's ground is a light neutral gray; matching it on the host
+            // surface avoids a dark flash before WebView2 has painted anything.
+            BackColor = System.Drawing.Color.FromArgb(0xD0, 0xD0, 0xD0);
 
             // The entire presentation layer: one WebView2 filling the window.
             webView = new WebView2 { Dock = DockStyle.Fill };

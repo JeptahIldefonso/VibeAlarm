@@ -1,0 +1,3508 @@
+/*
+ * Hand-written CSS rather than a utility framework. At this size the build step
+ * and the class-name noise cost more than they save, and no runtime is involved
+ * either way.
+ *
+ * Motion lives at the bottom, all of it behind prefers-reduced-motion.
+ *
+ * FONTS: there is deliberately no @import here.
+ *
+ * This file used to start with an @import of Outfit + JetBrains Mono from
+ * fonts.googleapis.com. It never worked in production and could not: the CSP in
+ * next.config.ts sets `style-src 'self' 'unsafe-inline'` (which blocks the
+ * imported stylesheet) and `font-src 'self' data:` (which blocks the font files
+ * fonts.gstatic.com would have served). Every visitor has always rendered in the
+ * system fallbacks below, while the CSS claimed otherwise — a request blocked on
+ * every page load and a font stack that lied about what was on screen.
+ *
+ * Do not re-add an @import. Loading a real webfont here means next/font, which
+ * self-hosts the files same-origin and therefore satisfies `font-src 'self'`
+ * without weakening the policy. See IMPLEMENTATION_PLAN.md Stage 1.
+ */
+
+/* ==========================================================================
+ * THEME SYSTEM — two visual systems, not two brightness levels.
+ *
+ *   monochromic (default)  black → charcoal → gray → silver → white. STRICTLY
+ *                          achromatic: every surface and text value is R=G=B.
+ *   vibrant                green-black surfaces + Spotify green / viridian.
+ *
+ * This replaced a light/dark pair. Three consequences worth knowing:
+ *
+ * 1. NO prefers-color-scheme BRANCHES. The OS preference is a brightness
+ *    signal, and neither theme is "the light one" — both are dark-grounded, so
+ *    the OS cannot meaningfully choose between them. Monochromic is the
+ *    unconditional default and the toggle is the only way to change it. This is
+ *    also why each theme is now declared EXACTLY ONCE: the old file defined the
+ *    light ramp twice (media query + attribute selector) and warned that the
+ *    copies must stay in sync. That hazard is gone.
+ *
+ * 2. TWO TOKEN LAYERS. The palette names below (--background, --card,
+ *    --heading, --foreground …) are the authoring surface. Beneath them the
+ *    legacy names (--bg, --fg, --border …) are aliases. ~700 lines of admin.css
+ *    and every public component already consume the legacy names, so aliasing
+ *    keeps the diff to this block instead of touching every rule. Write new
+ *    CSS against either — they resolve to the same value. Do not reintroduce
+ *    raw hex in components.
+ *
+ * 3. NO LIGHT-GROUND SPECIAL CASES. Rules that used to invert for the light
+ *    theme (film grain, hero grid) are single-valued again — both themes
+ *    are dark, so white-on-dark decoration works in both.
+ *
+ * Contrast, both themes, worst case = text on --hover-surface, machine-checked:
+ *   monochromic (#DADADA):  --foreground #171717 12.8:1  --muted-text #5F5F5F 4.6:1
+ *   vibrant     (#3A3B3C):  --foreground #E4E6EB  9.0:1  --muted-text #B0B3B8 5.3:1
+ * --muted-icon is the one sub-4.5 token (non-text, ≥3:1) — icons only.
+ * ========================================================================== */
+
+:root,
+:root[data-theme='monochromic'] {
+  /* ---- monochromic palette — VibeAlarm Light ----
+   *
+   * Grounded in VibeAlarm's Light mode: neutral mid-gray ground, near-black
+   * typography, hairline separation. Cards separated by borders, not fill.
+   * STRICTLY achromatic — every surface and text value is R=G=B.
+   *
+   * Contrast on worst-case surface (--hover-surface #DADADA), machine-checked:
+   *   --foreground  #171717   12.8:1    --heading     #171717   12.8:1
+   *   --body-text   #171717   12.8:1    --secondary   #171717   12.8:1
+   *   --muted-text  #5F5F5F    4.6:1    --muted-icon  #737373   3.4:1 (non-text,
+   *   ≥3:1 — icons/decoration only; text-bearing rules use --muted-text). */
+  --background:        #E5E5E5;
+  --deep-background:   #E0E0E0;
+  --navigation:        #E5E5E5;
+  --card:              #E5E5E5;
+  --elevated-card:     #E0E0E0;
+  --hover-surface:     #DADADA;
+  --border-subtle:     #A3A3A3;
+  --strong-border:     #A3A3A3;
+  --muted-icon:        #737373;
+  --muted-text:        #5F5F5F;
+  --secondary-text:    #171717;
+  --body-text:         #171717;
+  --important-text:    #171717;
+  --heading:           #171717;
+  --high-contrast-text:#171717;
+  --foreground:        #171717;
+
+  /* ---- legacy aliases ---- */
+  --bg:       var(--background);
+  --bg-raised: var(--card);
+  --bg-hover: var(--hover-surface);
+  --fg:       var(--foreground);
+  --fg-muted: var(--body-text);
+  --fg-subtle: var(--secondary-text);
+  /* Black accent: active nav underline, focus rings, primary CTAs. */
+  --accent:         var(--foreground);
+  --accent-dim:     rgba(0, 0, 0, 0.07);
+  --border:         var(--border-subtle);
+  /* Muted secondary: badges, technical labels. 4.6:1 on the worst surface. */
+  --accent-secondary: #5F5F5F;
+
+  /* ---- glass plate (project image containers) ----
+   *
+   * On a LIGHT ground the highlight has to be DARK. A white sheen over #E5E5E5
+   * is a ~2% lightness shift — invisible — so the glass reads by shading the
+   * plate away from the page, not by lighting it up. The vibrant theme inverts
+   * all of this, which is the entire reason these are tokens.
+   *
+   * --glass-tint is deliberately a low-alpha BLACK rather than var(--card):
+   * the plate must be see-through for the page ground and grain to register,
+   * and backdrop-filter blurs only what is behind the element — over an opaque
+   * background it is a no-op. */
+  --glass-tint:          rgb(0 0 0 / 0.04);
+  --glass-tint-soft:     rgb(0 0 0 / 0.03);
+  --glass-sheen-strong:  rgb(0 0 0 / 0.06);
+  --glass-sheen-soft:    rgb(0 0 0 / 0.035);
+  --glass-sheen-faint:   rgb(0 0 0 / 0.015);
+  --glass-specular:      rgb(255 255 255 / 0.5);
+  --glass-bevel:         rgb(255 255 255 / 0.65);
+
+  /* Decoration tints — dark lines on light ground. */
+  --grid-line:    rgba(0, 0, 0, 0.045);
+  /* Photographic background tokens.
+     --bg-photo-opacity: how strongly the image bleeds through the body ground.
+     --bg-photo-overlay: translucent veil that keeps text readable over the photo.
+     --grid-opacity: set to 0 so the grid does not fight the photographic texture. */
+  --bg-photo-opacity:   0.22;
+  --bg-photo-overlay:   rgba(229, 229, 229, 0.80);
+  --grid-opacity:       0.20;
+  --grain-opacity: 0.03;
+
+  /* Admin status colours — chromatic ON PURPOSE, semantic not decorative.
+     The hero presence dot is the one sanctioned public use (Discord-style
+     semantic status, always paired with the status word — never colour alone). */
+  --ok:    #10B981;
+  --warn:  #F59E0B;
+  --danger:#EF4444;
+
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Type scale. */
+  --text-xs:      0.75rem;
+  --text-sm:      0.875rem;
+  --text-base:    1rem;
+  --text-lg:      1.125rem;
+  --text-xl:      1.25rem;
+  --text-2xl:     1.5rem;
+  --text-3xl:     2rem;
+  --text-4xl:     2.5rem;
+  --text-5xl:     3.5rem;
+
+  /* Editorial display scale — hero name, oversized section labels. */
+  --text-display: clamp(2.5rem, 7vw, 4.5rem);
+  --text-hero-sub: clamp(0.9rem, 2.2vw, 1.35rem);
+  --text-editorial: 0.75rem;
+
+  /* Weights. */
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-black:    900;
+
+  /* Spacing. */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --max-w: 68rem;
+  --gap:   2rem;
+
+  /* Near-square corners — editorial, not app-like. */
+  --radius:      4px;
+  --radius-sm:   2px;
+  --radius-md:   4px;
+  --radius-lg:   6px;
+  --radius-full: 9999px;
+
+  /* Lighter shadows on a light ground. */
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 12px 0 rgb(0 0 0 / 0.12);
+  --shadow-lg: 0 12px 24px -4px rgb(0 0 0 / 0.16);
+
+  --ease:             cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast:  150ms var(--ease);
+  --transition-base:  250ms var(--ease);
+  --transition-slow:  400ms var(--ease);
+
+  /* Light theme for browser chrome (scrollbars, inputs, caret). */
+  color-scheme: light;
+}
+
+/* ---- vibrant theme — VibeAlarm Dark ----
+ *
+ * Facebook/Google-style neutral dark mode. Declared once; the toggle sets
+ * data-theme='vibrant' on <html>. STRICTLY monochrome — no chromatic accent.
+ * The ground is a warm-gray dark; surfaces lift via tonal steps, separated
+ * by hairline borders. White is the interaction accent, used sparingly.
+ *
+ * Contrast, worst case = text on --hover-surface (#3A3B3C), machine-checked:
+ *   --foreground   #E4E6EB   9.0:1     --heading      #E4E6EB   9.0:1
+ *   --body-text    #E4E6EB   9.0:1     --muted-text   #B0B3B8   5.3:1
+ *   --accent       #FFFFFF  17.6:1 (on --background #18191A)
+ * --muted-text clears 4.5:1 on every surface; body copy uses --body-text. */
+:root[data-theme='vibrant'] {
+  --background: #18191A;
+  --deep-background: #18191A;
+  --navigation: #18191A;
+  --card: #242526;
+  --elevated-card: #323335;
+  --hover-surface: #3A3B3C;
+  --border-subtle: #3A3B3C;
+  --strong-border: #3A3B3C;
+
+  --muted-icon: #B0B3B8;
+  --muted-text: #B0B3B8;
+  --secondary-text: #E4E6EB;
+  --body-text: #E4E6EB;
+  --important-text: #E4E6EB;
+  --heading: #E4E6EB;
+  --high-contrast-text: #E4E6EB;
+  --foreground: #E4E6EB;
+
+  /* Legacy aliases. --accent becomes white — the monochrome interaction
+     accent. Every existing rule that uses var(--accent) for an active state,
+     focus ring or hover border picks up white automatically. */
+  --bg: var(--background);
+  --bg-raised: var(--card);
+  --bg-hover: var(--hover-surface);
+  --fg: var(--foreground);
+  --fg-muted: var(--body-text);
+  --fg-subtle: var(--secondary-text);
+  --accent: #FFFFFF;
+  --accent-dim: rgba(255, 255, 255, 0.10);
+  --border: var(--border-subtle);
+  /* Monochrome secondary: badges, technical labels. Tailwind neutral-400. */
+  --accent-secondary: #B0B3B8;
+
+  --grid-line:    rgba(255, 255, 255, 0.04);
+  --grain-opacity: 0.03;
+
+  --ok:    #10B981;
+  --warn:  #F59E0B;
+  --danger:#EF4444;
+
+  /* Glass plate, inverted for the dark ground: white is the highlight and the
+     tint is a faint neutral cast, so the plates read without colour. Same
+     rules as the monochromic block above, opposite polarity. */
+  --glass-tint:          rgb(255 255 255 / 0.04);
+  --glass-tint-soft:     rgb(255 255 255 / 0.025);
+  --glass-sheen-strong:  rgb(255 255 255 / 0.07);
+  --glass-sheen-soft:    rgb(255 255 255 / 0.045);
+  --glass-sheen-faint:   rgb(255 255 255 / 0.015);
+  --glass-specular:      rgb(255 255 255 / 0.1);
+  --glass-bevel:         rgb(255 255 255 / 0.08);
+
+  color-scheme: dark;
+}
+
+/* Bare :root (before the theme bootstrap script runs) inherits monochromic
+   defaults above, so color-scheme:light is already set. No extra rule needed. */
+
+/* ---- vibrant accents — component treatments ----
+ *
+ * The token block above re-themes the whole site, but a few interactions get
+ * explicit colour so vibrant feels alive rather than merely re-coloured. Every
+ * rule here is scoped to the vibrant theme and touches appearance only — no
+ * markup, behaviour, or accessibility change. The MONO styles are untouched:
+ * each selector overrides a base rule only while data-theme='vibrant' is set.
+ *
+ * Monochrome accent: all interactions use white (--accent), matching VibeAlarm's
+ * dark mode. No chromatic accents (cyan, emerald, violet) in either theme. */
+
+:root[data-theme='vibrant'] .button:hover:not(:disabled):not([aria-disabled='true']),
+:root[data-theme='vibrant'] .button:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #18191A;
+}
+
+:root[data-theme='vibrant'] .button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #18191A;
+}
+
+:root[data-theme='vibrant'] .button-primary:hover:not(:disabled):not([aria-disabled='true']),
+:root[data-theme='vibrant'] .button-primary:focus-visible:not(:disabled):not([aria-disabled='true']) {
+  background: #E4E6EB;
+  border-color: #E4E6EB;
+  color: #18191A;
+}
+
+:root[data-theme='vibrant'] .copy-email-button:hover,
+:root[data-theme='vibrant'] .copy-email-button:focus-visible {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #18191A;
+}
+
+/* Section eyebrows and metadata labels — monochrome on dark ground. */
+:root[data-theme='vibrant'] .section-overline,
+:root[data-theme='vibrant'] .connect-label,
+:root[data-theme='vibrant'] .contact-eyebrow {
+  color: var(--foreground);
+}
+
+/* Prose links read as white on the dark ground. */
+:root[data-theme='vibrant'] .prose a {
+  color: var(--foreground);
+}
+
+/* Status marks: the hero availability dot pulses white. */
+:root[data-theme='vibrant'] .hero-availability-dot {
+  background: var(--accent);
+}
+
+/* Active/hover underlines — navigation and the tab switch — sit in white. */
+:root[data-theme='vibrant'] .site-header-nav a::after,
+:root[data-theme='vibrant'] .tab-button::after {
+  background: var(--accent);
+}
+
+:root[data-theme='vibrant'] .site-header-active {
+  color: var(--accent) !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Rem-based typography/spacing scale with the browser default, and browser
+     zoom at 120% renders exactly this relationship (rem sizes 1.2x, vw-based
+     clamp sizes unchanged). Setting the base here makes that appearance the
+     default at 100% zoom. */
+  font-size: 120%;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* `clip`, never `hidden`.
+   *
+   * Full-bleed decoration is sized with 100vw (see .hero::before), and on any
+   * platform with classic overlay-less scrollbars — Windows and most Linux —
+   * 100vw counts the scrollbar, so the element runs ~15px wider than the
+   * content box and pushes a horizontal scrollbar onto every page.
+   *
+   * `overflow: hidden` would also stop it, and would break the sticky header:
+   * hidden makes body a scroll container, and position: sticky resolves against
+   * the nearest scroll container rather than the viewport. `clip` creates no
+   * scroll container, so sticky keeps working.
+   *
+   * It is also exempt from the rule that a non-visible value on one axis forces
+   * the other to `auto` (CSS Overflow 3), so overflow-y stays visible here.
+   * Unsupported in Safari <16, where it degrades to no clipping — the old
+   * behaviour, not a worse one. */
+  overflow-x: clip;
+}
+
+/* ---------- photographic background — monochromic only ----------
+ *
+ * Layer order (bottom → top):
+ *   1. body::before  — large grayscale photograph  (position: fixed, z-index: -2)
+ *   2. body          — translucent overlay          (via background-color on body)
+ *   3. page content  — normal flow                 (z-index: 0)
+ *   4. body::after   — analog film grain            (z-index: 1)
+ *
+ * body::before is available because body::after is already taken by the grain.
+ * z-index: -2 places it beneath body's own background, which acts as the
+ * readability veil (set to rgba via --bg-photo-overlay in mono mode).
+ *
+ * The image is 'self'-hosted at /bg-mono.jpg — CSP already allows img-src 'self'.
+ * background-attachment: fixed gives a gentle parallax/depth effect as the user
+ * scrolls through the editorial sections.
+ *
+ * Vibrant theme: body::before is absent entirely — the dark viridian ground is
+ * the correct editorial identity and the photo would compete with it.
+ *
+ * prefers-reduced-motion: the photo is static (no animation), so no exception
+ * is needed. The grain animation (body::after) is already gated separately.
+ */
+:root:not([data-theme='vibrant']) body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* Strictly grayscale. The source image is already monochrome; the filter
+     guarantees it even if the asset is ever replaced with a colour photograph. */
+  background-image: url('/bg-mono.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* opacity controlled by token — easy to tweak without touching this rule. */
+  opacity: var(--bg-photo-opacity);
+  filter: grayscale(100%) contrast(0.65) brightness(1.35);
+  background-size: cover;
+  /* Promote to its own compositor layer. The photo is fully static (fixed,
+     never retransformed), but without this the filter/opacity surface is
+     re-sampled against the scrolling content above it on every frame. Promoted
+     and cached, the browser composites scrolling content over it directly.
+     Same idiom and rationale as the grain (body::after) and site-header.
+     No visual change. */
+  will-change: transform;
+}
+
+/* Readability veil — body's own background sits above the photo layer.
+ * In monochromic we replace the flat #F2F2F2 with a translucent equivalent so
+ * the photo bleeds through just enough to register. The alpha is intentionally
+ * high (0.72) so text contrast is never affected — the photo is atmosphere,
+ * not a mask.
+ *
+ * body { background: var(--bg); } continues to compile correctly because the
+ * token resolves to an opaque fallback in vibrant and to the overlay value here.
+ * We override the token in the monochromic block rather than changing the body
+ * rule so that admins and future themes can tune via one token. */
+:root:not([data-theme='vibrant']) body {
+  background: var(--bg-photo-overlay);
+}
+
+/* ---------- grain ----------
+ *
+ * Film grain over the whole viewport — the "raw" half of the identity
+ * (DESIGN_SPEC.md §33). One pseudo-element: no DOM node, no component, no JS.
+ *
+ * Inline SVG feTurbulence as a data: URI, because the CSP at next.config.ts
+ * allows `img-src 'self' data:` but blocks external hosts.
+ *
+ * pointer-events: none is load-bearing — the layer covers the entire viewport,
+ * so without it nothing on the site is clickable. z-index 1 puts it above the
+ * page ground and the photo layer (-2) but below the sticky header, skip link
+ * and toasts (100), so it never sits over a control.
+ *
+ * baseFrequency 0.9 is fine noise rather than clouds; the 160px tile keeps the
+ * URI short and repeats without a visible seam at that scale. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  /* No mix-blend-mode: blending the full-viewport noise over the scrolling page
+     forced a whole-screen re-blend on every frame — the dominant scroll cost.
+     As a plain static layer the noise is rasterised once and simply composited
+     over the page, which is free. The visible difference at 3% opacity is
+     negligible. */
+  will-change: transform;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* The blend mode was removed for scroll performance (see body::after). The
+   SVG noise source is identical across themes; only opacity differs, tuned via
+   --grain-opacity. */
+
+/* Forced colours: the overlay is decoration with no semantic value, and a noise
+   layer over a high-contrast palette actively hurts legibility. */
+@media (forced-colors: active) {
+  body::after {
+    display: none;
+  }
+
+  /* Inversion would be lost — replaced by the forced text/background pair. */
+  .connect-link:hover,
+  .connect-link:focus-visible {
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
+/* Editorial scale (DESIGN_SPEC.md §4): display 48-96px, section 32-56px, body
+   16-19px, technical label 11-13px mono. Tight leading and negative tracking at
+   the display end; both relax as size drops, because tight tracking that reads
+   as confident at 4rem reads as cramped at 1rem. */
+h1,
+h2,
+h3 {
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 7vw, 4.5rem);
+  font-weight: var(--weight-bold);
+}
+h2 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.025em;
+}
+h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 1rem;
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ---------- technical metadata primitive ----------
+ *
+ * The recurring editorial label: section numbers (01 /), eyebrow categories,
+ * dates, status. Mono, small, uppercase, widely tracked — the opposite of the
+ * display type, which is what gives the pairing its tension.
+ *
+ * Defined once here rather than repeated per component. DESIGN_SPEC.md §4:
+ * monospace is for technical metadata only, never for body copy.
+ *
+ * Letter-spacing is positive and large: at 12px uppercase, tracking is what
+ * separates "technical label" from "small heading". */
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  line-height: 1.4;
+}
+
+/* Section number — the same label at emphasis level. */
+.meta-number {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Full-bleed hairline. The editorial divider, distinct from a card border. */
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* Visible focus everywhere. Never remove this without a replacement. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  /* Inverted control — --fg ground, --bg text — never the accent. --accent is
+     #FFFFFF in this palette (DESIGN_SPEC.md §3); hosting white on it would
+     render the skip link invisible. These two fix the contrast in both themes. */
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 0 0 var(--radius) 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+/* ---------- layout ---------- */
+
+.section {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: clamp(3rem, 8vw, 6rem) clamp(1.25rem, 4vw, 2rem);
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-more {
+  font-size: 0.875rem;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+
+/* Section-level back/forward navigation ("← All projects", "All projects →").
+   A monochrome control — hairline border, mono arrow, hover lift — so it reads
+   as navigation rather than as a faint tag. The count label on /projects keeps
+   .section-more above because it is not navigation. */
+.section-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), transform var(--transition-fast);
+}
+
+.section-ctrl:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--fg);
+  transform: translateY(-1px);
+}
+
+.section-ctrl-arrow {
+  transition: transform var(--transition-fast);
+}
+
+.section-ctrl:hover .section-ctrl-arrow {
+  transform: translateX(3px);
+}
+
+.empty-state {
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+
+/* ---------- 404 / error states ----------
+ *
+ * The not-found and error pages reuse the editorial section idiom: a faint
+ * oversized numeral (same language as the showcase index numbers), an overline,
+ * a short heading, and the standard action buttons. The numeral is the only
+ * flourish — everything else is existing typography.
+ */
+.not-found {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: clamp(4rem, 12vw, 8rem) clamp(1.25rem, 4vw, 2rem)
+    clamp(5rem, 12vw, 9rem);
+}
+
+.not-found-code {
+  margin: 0 0 1.5rem;
+  font-family: var(--font-display);
+  font-size: clamp(5rem, 18vw, 11rem);
+  font-weight: var(--weight-black);
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: var(--border-subtle);
+  user-select: none;
+}
+
+.not-found h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.not-found-copy {
+  max-width: 42ch;
+  color: var(--fg-subtle);
+  margin: 0.75rem 0 0;
+}
+
+.not-found .hero-actions {
+  margin-top: 2rem;
+}
+
+/* ---------- missing-image placeholder ----------
+ *
+ * A project with no cover image is a designed empty state, not a void: the
+ * translucent plate stays and a muted editorial caption says what is missing.
+ * aria-hidden — the parent link already names the project, so the caption is
+ * decoration for sighted visitors, not a second announcement.
+ */
+.showcase-empty,
+.project-card-media-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.media-empty-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+/* ---------- responsive ----------
+ *
+ * Breakpoints: 40rem (640px) phone/tablet, 64rem (1024px) desktop.
+ *
+ * Most of this file needs no breakpoints — clamp() on section padding and
+ * auto-fill on the grids already respond to width. What is left is the handful
+ * of places where a fluid value cannot express the change.
+ *
+ * Each block below holds ONE simple selector. Per the Lightning CSS note at
+ * .hero-inner, a selector list that mixes a plain class with a :has() class
+ * caused declarations to be emitted outside their @media. Splitting the blocks
+ * costs a few bytes and removes the shape that triggered it.
+ */
+
+@media (max-width: 40rem) {
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}
+
+@media (max-width: 40rem) {
+  .site-header-inner {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+}
+
+/* The wordmark and the toggle stay on the first row; the link list wraps to its
+   own full-width centered row underneath. Keeps a 390px header to two rows
+   instead of four, which is the difference between a sticky bar and a banner. */
+@media (max-width: 40rem) {
+  .site-header-nav {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+/* 44px touch targets on phones — WCAG 2.5.5. Desktop keeps the tighter rhythm. */
+@media (max-width: 40rem) {
+  .site-header-nav a {
+    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+  }
+}
+
+@media (max-width: 40rem) {
+  .project-meta {
+    gap: var(--space-5);
+  }
+}
+
+/* Stacked pager: side-by-side halves get too narrow to read a title in.
+   Collapsing the grid to one column is what stacks them now — the previous
+   flex-direction/margin-left/max-width rules no longer apply to a grid. */
+@media (max-width: 40rem) {
+  .pager {
+    grid-template-columns: 1fr;
+    gap: var(--space-5);
+  }
+}
+
+@media (max-width: 40rem) {
+  .pager-next {
+    grid-column: 1;
+    text-align: left;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 40rem) {
+  .site-footer-inner {
+    padding: var(--space-8) clamp(1.25rem, 4vw, 2rem);
+  }
+}
+
+@media (max-width: 40rem) {
+  .site-footer-nav {
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+}
+
+/* ---------- hero ---------- */
+
+.hero {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: clamp(5rem, 14vw, 9rem) clamp(1.25rem, 4vw, 2rem) 3rem;
+  position: relative;
+}
+
+/* ── Discreet admin access trigger ──────────────────────────────────────────
+ *
+ * A small monochrome user-glyph floating at the hero's upper-left, independent
+ * of the hero layout: it is absolutely positioned against the hero's own edge,
+ * so it never pushes or displaces the content below. Hovering or keyboard
+ * focusing the circle reveals a one-line tooltip. All interaction is CSS — no
+ * JavaScript ships to the public site. The link is UI only; /admin enforces
+ * real server-side auth. */
+.admin-access {
+  position: absolute;
+  top: clamp(1.5rem, 4vw, 2.5rem);
+  left: clamp(0.25rem, 1.5vw, 0.75rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px touch target even though the visible circle is small (WCAG 2.5.5). */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: var(--radius-full);
+  color: var(--muted-icon);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.admin-access-dot {
+  position: relative;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--strong-border);
+  background: transparent;
+  transition: border-color var(--transition-fast),
+    background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+/* The Flaticon user glyph, rendered as a CSS mask so it inherits the
+   trigger's currentColor — monochrome on the light ground and legible on the
+   dark vibrant ground without a second asset or a filter hack. */
+.admin-access-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0.4rem;
+  background: currentColor;
+  -webkit-mask: url('/admin-user.png') center / contain no-repeat;
+  mask: url('/admin-user.png') center / contain no-repeat;
+}
+
+.admin-access:hover {
+  color: var(--foreground);
+}
+
+.admin-access:hover .admin-access-dot {
+  border-color: var(--foreground);
+  background: var(--accent-dim);
+  transform: scale(1.1);
+}
+
+/* Keyboard focus: same reveal as hover, plus a visible focus ring. */
+.admin-access:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+  color: var(--foreground);
+}
+
+.admin-access:focus-visible .admin-access-dot {
+  border-color: var(--foreground);
+  background: var(--accent-dim);
+  transform: scale(1.1);
+}
+
+/* Tooltip — absolutely positioned so it never moves the hero content. */
+.admin-access-tip {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: max-content;
+  max-width: min(14rem, calc(100vw - 2.5rem));
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--foreground);
+  border-radius: var(--radius-sm);
+  background: var(--foreground);
+  color: var(--background);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast),
+    visibility 0s linear var(--transition-fast);
+  pointer-events: none;
+}
+
+.admin-access:hover .admin-access-tip,
+.admin-access:focus-visible .admin-access-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+/* Hero grid: removed in monochromic (--grid-opacity: 0) — photographic texture
+   replaces it. In vibrant the grid is still rendered (token resolves normally). */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 100%;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 72px 72px, 72px 72px;
+  background-position: center top;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grid-opacity, 0.4);
+}
+
+/* The grid is --grid-line: white-on-dark by default, a faint viridian tint in
+   vibrant. No inversion branch — both themes are dark, so the decoration is
+   single-valued (the old light-theme override existed only because one theme
+   was light-grounded). */
+
+/* ── Editorial hero layout ──────────────────────────────────────────────────
+ *
+ * Two-column on desktop: wide left content + compact right annotation.
+ * Left side stacks vertically: thin rule → oversized name → meta strip →
+ * headline/tagline/bio → actions.
+ * Right side: the hero-panel redesigned as an editorial annotation plate.
+ * On small screens everything stacks in natural DOM order.
+ * ──────────────────────────────────────────────────────────────────────── */
+.hero-inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2.5rem, 6vw, 5rem);
+  align-items: start;
+}
+
+.hero-inner:has(.hero-panel) {
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  align-items: start;
+  gap: clamp(3rem, 6vw, 6rem);
+}
+
+@media (max-width: 63.9375rem) {
+  .hero-inner:has(.hero-panel) {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+
+/* Content column — all hero text lives here. */
+.hero-content {
+  min-width: 0;
+}
+
+/* Hairline rule above the name — the editorial entry point. */
+.hero-editorial-rule {
+  border: 0;
+  border-top: 1px solid var(--foreground);
+  margin: 0 0 clamp(1.25rem, 3vw, 2rem);
+  width: 100%;
+}
+
+/* Oversized editorial name block. */
+.hero-name-block {
+  margin: 0 0 clamp(1rem, 2.5vw, 1.75rem);
+}
+
+.hero-name-block h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: var(--weight-black);
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  margin: 0 auto;
+  color: var(--foreground);
+  text-align: center;
+  text-transform: uppercase;
+  /* Allow the name to break at a natural word boundary on medium screens. */
+  overflow-wrap: break-word;
+}
+
+/* Small mono strip: LOCATION / YEAR / AVAILABILITY below the name. */
+.hero-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  margin: clamp(0.75rem, 2vw, 1.25rem) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-text);
+  line-height: 1.6;
+}
+
+.hero-meta-strip-sep {
+  color: var(--border-subtle);
+}
+
+/* Avatar — squared photographic plate, kept for semantic meaning. */
+.hero-avatar {
+  width: clamp(5rem, 12vw, 7.5rem);
+  height: auto;
+  border-radius: 0;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  aspect-ratio: 1;
+  filter: grayscale(0.4) contrast(1.1);
+  transition: transform var(--transition-base), border-color var(--transition-base),
+    filter var(--transition-base);
+  margin-bottom: 1.5rem;
+}
+
+.hero-avatar:hover {
+  transform: scale(1.02);
+  border-color: var(--accent);
+  filter: grayscale(0) contrast(1);
+}
+
+/* Availability — kept as inline mono label, styled more like a status readout. */
+.hero-availability {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  color: var(--muted-text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+}
+
+.hero-availability-dot {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: var(--foreground);
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-availability-dot {
+    animation: pulse 2400ms ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* Headline and tagline now sit inside hero-text below the name block. */
+.hero-text {
+  margin-top: clamp(1.25rem, 3vw, 2rem);
+}
+
+.hero-tagline {
+  font-size: clamp(1rem, 1.5vw, 1.375rem);
+  color: var(--body-text);
+  margin: 1rem 0 0;
+  max-width: 52ch;
+  line-height: 1.65;
+}
+
+/* Location now lives in the hero meta strip. */
+.hero-bio {
+  margin-top: 1.5rem;
+  max-width: 60ch;
+  color: var(--body-text);
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---------- hero resume zone ----------
+ *
+ * The same band treatment as the connect zone below it — hairline rule, mono
+ * overline (.connect-label, reused rather than re-declared), then the row — so
+ * the two read as a pair. The wrapper owns the rule and the top spacing, so
+ * .hero-actions drops its own here instead of stacking a second border.
+ */
+.hero-resume {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hero-resume .hero-actions {
+  /* Matches .connect-list's offset from its overline. */
+  margin-top: 1rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* ---------- hero connect zone ----------
+ *
+ * An editorial band under the bio and primary CTA: hairline rule, mono
+ * overline, then the links laid out horizontally. Deliberately not cards —
+ * the boundary comes from the rule and the letter-spacing, not from a filled
+ * rounded box.
+ *
+ * Each link sits on a faint translucent chip (see .connect-link) so the row
+ * reads as clickable while staying monochrome. Hover darkens the chip slightly
+ * rather than inverting, which keeps the monochrome rule across both themes.
+ */
+.connect {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.connect-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  /* Reads as a section heading, not as metadata — --heading is black on the
+   * default theme and flips to near-white on vibrant. */
+  color: var(--heading);
+  font-weight: var(--weight-semibold);
+}
+
+.connect-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  /* Pull the row back by the link padding so the first label still lines up
+   * with the bio text above it. */
+  margin: 1rem 0 0 -0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.connect-item {
+  display: flex;
+}
+
+.connect-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--foreground);
+  /* A faint chip rather than a plain text link: translucent so the fixed
+   * background photograph reads through, with a very subtle gray border for the
+   * clickable affordance. The mix is against --foreground (near-black in the
+   * default theme, near-white in vibrant), so it stays monochrome and needs no
+   * per-theme override. */
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+  transition: color var(--transition-fast), background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.connect-link:hover,
+.connect-link:focus-visible {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+
+.connect-link-arrow {
+  font-size: 0.9em;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+
+.connect-link:hover .connect-link-arrow,
+.connect-link:focus-visible .connect-link-arrow {
+  transform: translate(0.1em, -0.1em);
+}
+
+/* Roomier tap targets and a full-width stack on small screens, so the row
+ * wraps instead of overflowing. */
+@media (max-width: 40rem) {
+  .connect-list {
+    gap: 0.25rem 1.25rem;
+  }
+
+  .connect-link {
+    padding: 0.625rem 0.75rem;
+  }
+}
+
+/* ---------- hero presence panel ----------
+ *
+ * A Discord-style presence on the right column: a small circular avatar with a
+ * status dot overlapping its bottom corner, the status word, and one short
+ * custom line. No fill, no border box — just the left-rule plate, so it reads
+ * as a lean editorial annotation next to the hero. The dot is the only colour
+ * on the panel; everything else stays monochrome.
+ */
+.hero-panel {
+  width: 100%;
+  max-width: 14rem;
+  border: none;
+  background: none;
+  border-left: 1px solid var(--border-subtle);
+  padding: 0 0 0 1.25rem;
+  font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Avatar + overlapping dot. The wrapper keeps the dot positioned even when
+ * there is no image. */
+.hero-presence {
+  position: relative;
+  width: 3rem;
+  height: 3rem;
+}
+
+.hero-presence-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  filter: grayscale(0.2) contrast(1.05);
+}
+
+.hero-presence-dot {
+  position: absolute;
+  right: -0.125rem;
+  bottom: -0.125rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--foreground);
+  /* The ring is the page ground, so the dot reads as sitting ON the avatar
+     rather than bleeding into it. */
+  border: 2px solid var(--bg);
+}
+
+.hero-presence-dot-online {
+  background: var(--ok);
+}
+
+.hero-presence-dot-busy {
+  background: var(--warn);
+}
+
+.hero-presence-dot-offline {
+  background: var(--danger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-presence-dot {
+    animation: pulse 2400ms ease-in-out infinite;
+  }
+}
+
+.hero-presence-status {
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--body-text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.hero-presence-text {
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--muted-text);
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 63.9375rem) {
+  .hero-panel {
+    max-width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+    padding: 1.25rem 0 0;
+    margin-top: 0.5rem;
+  }
+}
+
+/* ---------- editorial project showcase ----------
+ *
+ * Projects as editorial strips, not cards. Each item is a full-bleed
+ * row separated by a hairline rule. Large index number, bold title, and
+ * photographic image. No card background, no box shadow.
+ */
+.showcase {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.showcase-item {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(1.25rem, 3vw, 2rem);
+  align-items: start;
+  padding: clamp(2.5rem, 6vw, 4.5rem) 0;
+  border-top: 1px solid var(--border-subtle);
+  position: relative;
+}
+
+.showcase-item:last-child {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Large faint index behind the item — editorial magazine numbering. */
+.showcase-item::before {
+  content: attr(data-index);
+  position: absolute;
+  top: clamp(1rem, 2.5vw, 2rem);
+  right: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(3.5rem, 8vw, 6rem);
+  font-weight: var(--weight-black);
+  letter-spacing: -0.05em;
+  color: var(--border-subtle);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.showcase-media {
+  display: block;
+  min-width: 0;
+  text-decoration: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0;
+  overflow: hidden;
+  /* Glass plate, same construction as .carousel-frame. Translucent so
+     the fixed background photograph and grain blur through — an opaque
+     var(--card) here would make backdrop-filter a no-op. */
+  isolation: isolate;
+  background:
+    linear-gradient(
+      135deg,
+      var(--glass-sheen-strong) 0%,
+      var(--glass-sheen-soft) 42%,
+      transparent 70%
+    ),
+    var(--glass-tint);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  box-shadow:
+    0 1px 0 0 var(--glass-bevel) inset,
+    0 18px 40px -24px rgb(0 0 0 / 0.35);
+  transition: border-color var(--transition-base), transform var(--transition-base),
+    box-shadow var(--transition-base);
+  position: relative;
+  z-index: 1;
+}
+
+/* Specular sweep, below the frame (z-index: 2) so it never washes out artwork. */
+.showcase-media::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    var(--glass-specular) 0%,
+    transparent 38%
+  );
+  z-index: 1;
+}
+
+.showcase-media:hover,
+.showcase-media:focus-visible {
+  border-color: var(--foreground);
+  transform: translateY(-3px);
+  box-shadow:
+    0 1px 0 0 var(--glass-bevel) inset,
+    0 24px 48px -26px rgb(0 0 0 / 0.42);
+}
+
+.showcase-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* Transparent: the plate is .showcase-media. A second opaque layer here would
+     cover the glass it sits on. */
+  background: transparent;
+  position: relative;
+  z-index: 2;
+  padding: clamp(1rem, 3vw, 2rem);
+  min-height: 220px;
+  max-height: 480px;
+}
+
+.showcase-image {
+  max-width: 100%;
+  max-height: 420px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  filter: grayscale(0.25) contrast(1.08);
+  transition: transform var(--transition-base), filter var(--transition-base);
+}
+
+.showcase-media:hover .showcase-image,
+.showcase-media:focus-visible .showcase-image {
+  transform: scale(1.02);
+  filter: grayscale(0) contrast(1);
+}
+
+/* Placeholder for a project with no cover. Transparent so the plate below shows
+   through — an opaque fill would read as a solid block punched into the glass. */
+.showcase-empty {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  background: var(--glass-tint-soft);
+}
+
+.showcase-body {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-body .meta {
+  margin: 0 0 1rem;
+}
+
+.showcase-title {
+  font-size: clamp(1.75rem, 3.6vw, 2.5rem);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.0;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+
+.showcase-title a {
+  color: var(--foreground);
+  text-decoration: none;
+  transition: opacity var(--transition-fast);
+}
+
+.showcase-title a:hover,
+.showcase-title a:focus-visible {
+  opacity: 0.6;
+}
+
+.showcase-summary {
+  color: var(--body-text);
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 56ch;
+  margin: 0 0 1.5rem;
+}
+
+.showcase-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--body-text);
+  text-decoration: none;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.showcase-link:hover,
+.showcase-link:focus-visible {
+  color: var(--foreground);
+  border-color: var(--foreground);
+}
+
+.showcase-link span {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+
+.showcase-link:hover span,
+.showcase-link:focus-visible span {
+  transform: translateX(4px);
+}
+
+@media (min-width: 64rem) {
+  .showcase-item {
+    grid-template-columns: 1.15fr 1fr;
+    grid-template-areas: 'media body';
+    gap: clamp(2rem, 5vw, 4rem);
+  }
+
+  .showcase-item-alt {
+    grid-template-columns: 1fr 1.15fr;
+    grid-template-areas: 'body media';
+  }
+
+  .showcase-media {
+    grid-area: media;
+  }
+
+  .showcase-body {
+    grid-area: body;
+    /* Align text to the center vertically on desktop. */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 40rem) {
+  .showcase {
+    gap: 0;
+  }
+}
+
+/* ---------- about ----------
+ *
+ * DESIGN_SPEC.md §17. The bio is authored copy rendered through Markdown; the
+ * facts block derives from snapshot fields, so it degrades when a field is
+ * null. Grid flattens to a stacked column on small screens.
+ */
+.about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: clamp(2rem, 6vw, 5rem);
+  align-items: start;
+}
+
+.about-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.about-head .meta {
+  margin: 0;
+}
+
+.about-bio {
+  max-width: 60ch;
+  color: var(--fg-muted);
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+.about-bio p {
+  margin: 0 0 1rem;
+}
+
+.about-bio p:last-child {
+  margin-bottom: 0;
+}
+
+.about-facts {
+  margin: 2rem 0 0;
+  padding: 1.5rem 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 1rem;
+}
+
+.about-fact {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 1rem;
+}
+
+.about-fact dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.about-fact dd {
+  margin: 0;
+  color: var(--fg);
+}
+
+@media (max-width: 63.9375rem) {
+  .about {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Eyebrow above a section heading. */
+.section-overline {
+  margin: 0 0 0.5rem;
+}
+
+/* Anchor targets sit under the sticky header; give them a headroom cushion so
+   a nav jump lands with the heading visible. */
+#home,
+#projects,
+#work,
+#about,
+#experience,
+#education,
+#contact {
+  scroll-margin-top: 5.5rem;
+}
+
+/* ---------- contact section — editorial inverted block ——————————— */
+
+.contact {
+  padding: clamp(3rem, 8vw, 5rem) var(--gap) clamp(2.5rem, 7vw, 4rem);
+  /* Inverted: black in monochromic — editorial spread. In vibrant it uses the
+     deepest background to maintain the dark-editorial feel without going pure black. */
+  background: var(--contact-bg, #000000);
+  color: var(--contact-fg, #FFFFFF);
+}
+
+/* Contact color vars: inverted block. Monochromic uses near-black ground;
+   vibrant uses its background with explicit dark-theme tokens. */
+:root[data-theme='monochromic'] {
+  --contact-bg: #171717;
+  --contact-fg: #E5E5E5;
+  --contact-border: #A3A3A3;
+  --contact-muted: #737373;
+}
+
+:root[data-theme='vibrant'] {
+  --contact-bg: #18191A;
+  --contact-fg: #E4E6EB;
+  --contact-border: #3A3B3C;
+  --contact-muted: #B0B3B8;
+}
+
+/* The bare :root default is monochromic, so set contact tokens there too. */
+:root:not([data-theme='vibrant']) {
+  --contact-bg: #171717;
+  --contact-fg: #E5E5E5;
+  --contact-border: #A3A3A3;
+  --contact-muted: #737373;
+}
+
+.contact-inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+}
+
+.contact-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--contact-muted);
+  margin: 0 0 clamp(1rem, 2.5vw, 1.75rem);
+}
+
+.contact-heading {
+  font-size: clamp(2.25rem, 6vw, 4.5rem);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.0;
+  margin: 0 0 clamp(2rem, 5vw, 3.5rem);
+  color: var(--contact-fg);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+/* copy-email in the inverted contact section: tokens inherit from contact vars. */
+.copy-email {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+
+.copy-email-address {
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2.5vw, 1.5rem);
+  font-weight: var(--weight-medium);
+  color: var(--contact-fg);
+  text-decoration: none;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--contact-border);
+  background: none;
+  border-radius: 0;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  transition: opacity var(--transition-fast);
+  display: inline-block;
+}
+
+.copy-email-address:hover,
+.copy-email-address:focus-visible {
+  opacity: 0.6;
+  border-color: var(--contact-fg);
+}
+
+.copy-email-button {
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--contact-fg);
+  background: transparent;
+  border: 1px solid var(--contact-border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.copy-email-button:hover,
+.copy-email-button:focus-visible {
+  background: var(--contact-fg);
+  color: var(--contact-bg);
+  border-color: var(--contact-fg);
+}
+
+.copy-email-status {
+  min-height: 1.25rem;
+  color: var(--contact-muted);
+}
+
+/* ---------- buttons and chips — editorial rectangular —————————————— */
+
+/* Near-square, no fill, hairline border, hover-inversion.
+   White → black: a press-print interaction rather than a glow. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0.5rem 1.125rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), transform var(--transition-fast);
+}
+
+.button:hover {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--background);
+  transform: translateY(-1px);
+}
+
+.button:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.button:disabled:hover,
+.button[aria-disabled='true']:hover {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--foreground);
+}
+
+/* Primary: solid black fill → hover lifts to white/inverted. */
+.button-primary {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--background);
+}
+
+.button-primary:hover {
+  background: transparent;
+  border-color: var(--foreground);
+  color: var(--foreground);
+}
+
+.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--body-text);
+}
+
+.button-ghost:hover {
+  background: var(--accent-dim);
+  color: var(--foreground);
+  border-color: transparent;
+}
+
+/* Kept for the admin, which is the only place a destructive action exists. */
+.button-danger {
+  background: color-mix(in oklab, var(--danger) 6%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 22%, transparent);
+  color: var(--danger);
+}
+
+.button-danger:hover {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 34%, transparent);
+}
+
+.button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  transition: color var(--transition-fast), border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.link-chip:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.link-chip-icon {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.tech-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+/* Mono technical label. The colour was color-mix(--accent 80%, --fg), which was
+   a violet tint before the palette change and now resolves to near-white on a
+   near-white wash — unreadable. --fg-muted is a verified 7.2:1 on every
+   surface. */
+/* Technical badge. --accent-secondary is the semantic hook: silver in
+   monochromic, viridian in vibrant (per the brief's "use #2ECC8A for secondary
+   accents, badges, icons"). One token instead of a per-theme override on every
+   badge rule. */
+.tech-chip {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.tech-chip-more {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-subtle);
+}
+
+/* ---------- project grid ---------- */
+
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  gap: var(--gap);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Glass plate, matching the showcase and the detail-page cover. */
+  isolation: isolate;
+  background:
+    linear-gradient(
+      135deg,
+      var(--glass-sheen-soft) 0%,
+      var(--glass-sheen-faint) 45%,
+      transparent 72%
+    ),
+    var(--glass-tint-soft);
+  backdrop-filter: blur(12px) saturate(112%);
+  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  box-shadow:
+    0 1px 0 0 var(--glass-bevel) inset,
+    0 14px 32px -26px rgb(0 0 0 / 0.32);
+  overflow: hidden;
+  transition: border-color var(--transition-base), transform var(--transition-base),
+    background var(--transition-base), box-shadow var(--transition-base);
+  height: 100%;
+}
+
+/* Border, a one-step surface lift, and translate. No glow: monochromic bans
+   decorative colour outright (DESIGN_SPEC.md §3, §11 "avoid box-shadow: 0 0
+   50px orange"), and in vibrant a green halo on every card is exactly the
+   Spotify-clone look the brief rules out — the green belongs on the border and
+   the CTA, not spilling around the card.
+   The lift is now one step up the glass tint rather than opaque --elevated-card,
+   which would have snapped the plate solid on hover. */
+.project-card:hover {
+  border-color: var(--accent);
+  background:
+    linear-gradient(
+      135deg,
+      var(--glass-sheen-strong) 0%,
+      var(--glass-sheen-soft) 45%,
+      transparent 72%
+    ),
+    var(--glass-tint);
+  transform: translateY(-4px);
+  box-shadow:
+    0 1px 0 0 var(--glass-bevel) inset,
+    0 20px 40px -26px rgb(0 0 0 / 0.4);
+}
+
+.project-card:focus-within {
+  border-color: var(--accent);
+}
+
+.project-card-image-link {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  /* Transparent: the card is the plate. A fill here covers the glass. */
+  background: transparent;
+}
+
+.project-card-media {
+  width: 100%;
+  min-height: 180px;
+  max-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.project-card-media img {
+  max-width: 100%;
+  max-height: 248px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  transition: transform var(--transition-slow);
+}
+
+.project-card:hover .project-card-media img {
+  transform: scale(1.03);
+}
+
+/* Translucent, matching .showcase-empty — an opaque gradient would punch a solid
+   block into the glass plate. */
+.project-card-media-empty {
+  width: 100%;
+  min-height: 180px;
+  background: linear-gradient(
+    135deg,
+    var(--glass-sheen-soft) 0%,
+    transparent 100%
+  );
+}
+
+.project-card-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.project-card-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin: 0;
+}
+
+.project-card-title-link {
+  text-decoration: none;
+  color: var(--fg);
+  transition: color var(--transition-fast);
+}
+
+.project-card-title-link:hover {
+  color: var(--accent);
+}
+
+.project-card-summary {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0.75rem 0 0;
+  flex-grow: 1;
+}
+
+.project-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.button-sm {
+  min-height: 2rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-editorial);
+  letter-spacing: 0.1em;
+}
+
+/* ---------- timeline (experience + education) ----------
+ *
+ * A ruled list, not a dotted vertical rail. The rail is the visual cliché of
+ * every generated portfolio, and it costs a pseudo-element per row to say what
+ * the borders already say — that these are sequential entries. Borders match
+ * .showcase-item, which is the same idea elsewhere on the site.
+ *
+ * No new colours, sizes, or fonts: every value here is an existing token. */
+
+.timeline {
+  list-style: none;
+  margin: var(--space-6) 0 0;
+  padding: 0;
+}
+
+.timeline-item {
+  padding: var(--space-6) 0;
+  border-top: 1px solid var(--border);
+}
+
+.timeline-item:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Title and dates share a baseline on wide screens and stack on narrow ones. The
+   dates wrap as one unit rather than breaking mid-range. */
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.timeline-title {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--heading);
+}
+
+.timeline-dates {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+/* Ongoing marker. Decorative — "Present" in the date range is what actually
+   states this, so the dot is aria-hidden at the call site. */
+.timeline-current-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--accent-secondary);
+}
+
+.timeline-org {
+  margin: var(--space-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.timeline-org a {
+  color: inherit;
+}
+
+.timeline-body {
+  margin-top: var(--space-4);
+}
+
+.timeline-body .prose {
+  font-size: var(--text-sm);
+}
+
+/* ---------- experience & education — tab switch ----------
+ *
+ * The dedicated record page keeps its title in the section-head and lets this
+ * compact editorial switch choose which list follows. Same language as the
+ * site-header nav active item and the theme-toggle: uppercase mono labels
+ * separated by a slash, active label full-opacity black with a 1px underline
+ * sitting on the hairline below — no pill, no fill, no colour.
+ */
+.expe-edu-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-button {
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0.375rem 0.25rem;
+  min-height: 2rem;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--transition-fast);
+}
+
+.tab-button::after {
+  content: '';
+  position: absolute;
+  bottom: calc(var(--space-3) * -1);
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--foreground);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform var(--transition-fast);
+}
+
+.tab-button:hover {
+  color: var(--foreground);
+}
+
+.tab-button:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.tab-button[aria-selected='true'] {
+  color: var(--foreground);
+}
+
+.tab-button[aria-selected='true']::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.tab-sep {
+  color: var(--muted-icon);
+  margin: 0 0.25rem;
+}
+
+/* 44px touch targets on phones, same as the site header nav. */
+@media (max-width: 40rem) {
+  .tab-button {
+    min-height: 2.75rem;
+    padding: 0.25rem 0.375rem;
+  }
+
+  .expe-edu-tabs {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------- prose ---------- */
+
+.prose {
+  max-width: 68ch;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3 {
+  margin: 2rem 0 0.75rem;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.25rem;
+}
+
+.prose li + li {
+  margin-top: 0.375rem;
+}
+
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.125rem 0.375rem;
+  border-radius: 5px;
+  background: var(--bg-hover);
+}
+
+.prose pre {
+  padding: 1rem 1.125rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  overflow-x: auto;
+}
+
+.prose pre code {
+  padding: 0;
+  background: none;
+}
+
+.prose blockquote {
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
+  color: var(--fg-muted);
+}
+
+.prose img {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+/* ---------- site header — editorial typographic nav ——————————————— */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in oklab, var(--navigation) 88%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  /* Promote to its own compositor layer: the backdrop-filter then samples a
+     pre-rendered layer instead of re-rasterizing the page beneath on every
+     scroll frame. No visual change. */
+  will-change: transform;
+  transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.site-header-inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 1.125rem clamp(1.25rem, 4vw, 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.75rem;
+}
+
+.site-header-logo {
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--foreground);
+  text-decoration: none;
+  transition: opacity var(--transition-fast);
+  flex: none;
+}
+
+.site-header-logo:hover {
+  opacity: 0.55;
+}
+
+.site-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-header-nav a {
+  display: block;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--muted-text);
+  transition: color var(--transition-fast);
+  position: relative;
+}
+
+/* Active underline — a 1px rule, not a fill. */
+.site-header-nav a::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0.875rem;
+  right: 0.875rem;
+  height: 1px;
+  background: var(--foreground);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform var(--transition-fast);
+}
+
+.site-header-nav a:hover {
+  color: var(--foreground);
+}
+
+.site-header-nav a:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.site-header-active {
+  color: var(--foreground) !important;
+}
+
+.site-header-active::after {
+  transform: scaleX(1) !important;
+}
+
+/* Theme switch — flat typographic control, not a toggle widget.
+ *
+ * Two short uppercase labels separated by a slash. The active theme's label
+ * is full-opacity black; the inactive one is dim. No border, no background,
+ * no rounded pill — reads as a typographic element, not a button.
+ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+  padding: 0 0.25rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-icon);
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  opacity: 0.7;
+}
+
+.theme-toggle-icon {
+  display: block;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+
+.theme-toggle-sep {
+  color: var(--border-subtle);
+  line-height: 1;
+}
+
+/* Active label is full-weight foreground; inactive stays dim. */
+:root .theme-toggle-mono,
+:root[data-theme='monochromic'] .theme-toggle-mono {
+  color: var(--foreground);
+}
+
+:root .theme-toggle-vibrant,
+:root[data-theme='monochromic'] .theme-toggle-vibrant {
+  color: var(--muted-icon);
+}
+
+:root[data-theme='vibrant'] .theme-toggle-mono {
+  color: var(--muted-icon);
+}
+
+:root[data-theme='vibrant'] .theme-toggle-vibrant {
+  color: var(--foreground);
+}
+
+/* ---------- pager ---------- */
+
+/* Two equal columns rather than flex + margin-left:auto. With flex the two
+   tiles took different widths depending on title length, which read as
+   unbalanced; the grid gives both sides identical width whether one or both are
+   present, and grid-column: 2 keeps a solitary next link on the right. */
+.pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin: var(--space-12) 0 0;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-decoration: none;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  /* Long titles must not blow the column out. */
+  min-width: 0;
+  transition: transform var(--transition-fast), border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.pager-link:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Each side leans toward its own direction of travel. The old shared +3px rule
+   moved BOTH tiles right, so the previous link animated away from the direction
+   it navigates — and with only a next link present, nothing corrected it. */
+.pager-prev:hover {
+  transform: translateX(-3px);
+}
+
+.pager-next:hover {
+  transform: translateX(3px);
+}
+
+/* Pinned to the second column so a missing `prev` leaves the left cell empty
+   rather than sliding `next` over to the left edge. */
+.pager-next {
+  grid-column: 2;
+  text-align: right;
+  align-items: flex-end;
+}
+
+.pager-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* The arrow carries the affordance: it slides toward its own edge on hover
+   while the label stays put, so direction is legible without reading the word. */
+.pager-arrow {
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+
+.pager-prev:hover .pager-arrow {
+  transform: translateX(-2px);
+}
+
+.pager-next:hover .pager-arrow {
+  transform: translateX(2px);
+}
+
+.pager-title {
+  font-size: var(--text-sm);
+  color: var(--fg);
+  font-weight: var(--weight-medium);
+  /* Two lines then ellipsis — a long title would otherwise make one tile twice
+     the height of its partner and undo the balance the grid just bought. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pager-link:hover .pager-title {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pager-link,
+  .pager-arrow {
+    transition: none;
+  }
+
+  .pager-prev:hover,
+  .pager-next:hover,
+  .pager-prev:hover .pager-arrow,
+  .pager-next:hover .pager-arrow {
+    transform: none;
+  }
+}
+
+/* ---------- footer ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 6rem;
+  background: var(--bg-raised);
+}
+
+.site-footer-inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 4rem clamp(1.25rem, 4vw, 2rem);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3rem 2rem;
+  align-items: start;
+}
+
+@media (max-width: 40rem) {
+  .site-footer-inner {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+.site-footer-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin: 0;
+  color: var(--fg);
+}
+
+.site-footer-tagline {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  margin: 0.5rem 0 0;
+  max-width: 32ch;
+}
+
+.site-footer-copy {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  margin: 1.5rem 0 0;
+  grid-column: 1 / -1;
+}
+
+.site-footer-nav-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.site-footer-nav {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.site-footer-nav a {
+  text-decoration: none;
+  color: var(--fg-muted);
+  transition: color var(--transition-fast);
+}
+
+.site-footer-nav a:hover {
+  color: var(--fg);
+}
+
+.site-footer-email {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+  display: inline-block;
+  margin-top: 0.5rem;
+}
+
+.site-footer-email:hover {
+  color: var(--accent);
+}
+
+/* ---------- project detail ---------- */
+
+.project-header {
+  margin-bottom: 2.5rem;
+}
+
+.project-detail {
+  padding-top: clamp(2rem, 3.5vw, 3rem);
+}
+
+.project-header h1 {
+  margin-top: 1rem;
+  font-size: clamp(1.25rem, 2.2vw, 1.75rem);
+  text-align: center;
+}
+
+.project-header .hero-tagline {
+  font-size: clamp(1rem, 1.2vw, 1.125rem);
+  line-height: 1.55;
+}
+
+.project-details {
+  margin-top: 2.5rem;
+}
+
+.project-carousel-actions {
+  justify-content: center;
+  margin-top: 0.5rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  margin: 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.project-meta dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-subtle);
+  margin-bottom: 0.375rem;
+}
+
+.project-meta dd {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.project-body {
+  margin-bottom: 3rem;
+}
+
+/* ---------- project carousel — one frame, side arrows, counter ----------
+ *
+ * The single image presentation on a project page: the cover and gallery rows
+ * are merged upstream, so this frame is the only plate and no asset is shown
+ * twice. One image at a time, kept compact and viewport-proportional so the
+ * carousel sits inside the first viewport with the project header instead of
+ * pushing the page into a long gallery scroll.
+ *
+ * The image keeps its natural aspect ratio (contain, never cover) and is capped
+ * to a viewport-relative height plus a width bound, so a tall screenshot stays
+ * fully visible and a landscape one does not hog the frame. Arrows sit on the
+ * left and right edges of the stage, vertically centred; the counter lives
+ * quietly beneath. Monochrome throughout: hairline border, mono arrows, meta
+ * counter.
+ */
+.project-carousel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 3rem;
+}
+
+.carousel-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.carousel-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: clamp(0.375rem, 1.25vw, 0.875rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--glass-sheen-soft) 40%, transparent) 0%,
+      color-mix(in srgb, var(--glass-sheen-faint) 40%, transparent) 45%,
+      transparent 72%
+    ),
+    color-mix(in srgb, var(--glass-tint-soft) 40%, transparent);
+  backdrop-filter: blur(10px) saturate(112%);
+  -webkit-backdrop-filter: blur(10px) saturate(112%);
+  box-shadow:
+    0 1px 0 0 var(--glass-bevel) inset,
+    0 14px 32px -26px rgb(0 0 0 / 0.32);
+}
+
+.carousel-img {
+  max-width: 100%;
+  max-height: 56vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  display: block;
+  cursor: zoom-in;
+  box-shadow: 0 10px 24px -20px rgb(0 0 0 / 0.42);
+}
+
+.carousel-arrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.carousel-arrow:hover,
+.carousel-arrow:focus-visible {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  color: var(--background);
+}
+
+.carousel-count {
+  margin-top: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.carousel-caption {
+  margin-top: 0.5rem;
+  max-width: 52ch;
+  text-align: center;
+}
+
+.project-carousel-empty {
+  min-height: 12rem;
+  margin-bottom: 3rem;
+}
+
+/* Zoom overlay — black plate, untrimmed original. */
+.carousel-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.92);
+  cursor: zoom-out;
+}
+
+.carousel-zoom-img {
+  max-width: 92vw;
+  max-height: 88vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-out;
+}
+
+.carousel-zoom-close {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.carousel-zoom-close:hover,
+.carousel-zoom-close:focus-visible {
+  background: rgb(255 255 255 / 0.12);
+  border-color: #fff;
+}
+
+.carousel-zoom-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: rgb(255 255 255 / 0.35);
+  color: #fff;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.carousel-zoom-arrow:hover,
+.carousel-zoom-arrow:focus-visible {
+  background: rgb(255 255 255 / 0.12);
+  border-color: #fff;
+  color: #fff;
+}
+
+.carousel-zoom-prev {
+  left: 1rem;
+}
+
+.carousel-zoom-next {
+  right: 1rem;
+}
+
+@media (max-width: 40rem) {
+  .carousel-stage {
+    gap: 0.5rem;
+  }
+
+  .carousel-arrow {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .carousel-img {
+    max-height: 50vh;
+  }
+
+  .carousel-zoom-arrow {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .carousel-zoom-prev {
+    left: 0.5rem;
+  }
+
+  .carousel-zoom-next {
+    right: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel-arrow,
+  .carousel-zoom-close,
+  .carousel-zoom-arrow {
+    transition: none;
+  }
+}
+
+/* backdrop-filter is the expensive part and the least essential — the gradients
+   and shadows already carry the look. Dropped where the device says it cannot
+   afford motion/effects, and where the browser has no support. */
+@media (prefers-reduced-motion: reduce) {
+  .carousel-frame {
+    transition: none;
+  }
+}
+
+/* Blur has to continually sample and composite the content behind every card.
+ * That is disproportionately expensive on a phone where multiple cards can
+ * overlap the viewport while scrolling. The gradients, borders and shadows
+ * preserve the existing glass language; only the least-visible part of the
+ * effect is removed at this constrained breakpoint. */
+@media (max-width: 48rem) {
+  .showcase-media,
+  .project-card,
+  .carousel-frame {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* No backdrop-filter support: keep the translucent tint and the gradients, which
+   are what carry the look. Only the blur is lost. Painting var(--card) here
+   would defeat the point — an opaque plate is the thing being avoided. */
+@supports not (backdrop-filter: blur(1px)) {
+  .carousel-frame,
+  .showcase-media,
+  .project-card {
+    background:
+      linear-gradient(
+        135deg,
+        var(--glass-sheen-strong) 0%,
+        var(--glass-sheen-soft) 45%,
+        transparent 72%
+      ),
+      var(--glass-tint);
+  }
+}
+
+/* Forced colours: translucency and blur are decoration, and a see-through plate
+   over a high-contrast palette hurts legibility. Same treatment the grain layer
+   already gets. The border stays — it is what separates image from page. */
+@media (forced-colors: active) {
+  .carousel-frame,
+  .showcase-media,
+  .project-card {
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  .showcase-media::before {
+    display: none;
+  }
+}
+
+/* ---------- sidebar — FLOATING GLASS CONNECT panel ----------
+ *
+ * An ultra-transparent floating glass panel on the left side of the viewport.
+ * Does not create a grid/column layout or push the main portfolio content.
+ * Sits as an overlay with position: fixed.
+ */
+
+:root {
+  --rail-w: 150px;
+}
+
+/* No column reservation: main content flows naturally */
+.site-shell {
+  padding-left: 0;
+}
+
+.site-rail {
+  position: fixed;
+  left: clamp(20px, 2vw, 28px);
+  top: clamp(6.25rem, 8.5vh, 7.5rem);
+  transform: none;
+  width: var(--rail-w);
+  max-width: 160px;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  padding: 0.5rem 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+:root[data-theme='vibrant'] .site-rail {
+  background: rgba(255, 255, 255, 0.02);
+  border: none;
+}
+
+/* The floating rail needs ~160px of empty left gutter. Between 1152px and just
+   under 1600px (100rem) the viewport gutter is too narrow: the panel would sit
+   on top of the hero meta strip and swallow the admin icon. Below 100rem the
+   trigger + drawer take over instead. */
+@media (min-width: 100rem) {
+  .site-rail {
+    display: flex;
+  }
+}
+
+.site-rail .connect-label {
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+:root[data-theme='vibrant'] .site-rail .connect-label {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.site-rail .connect-list,
+.site-rail-drawer .connect-list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-rail .connect-item,
+.site-rail-drawer .connect-item {
+  display: block;
+}
+
+/* Text-only editorial links — no button boxes, no rectangular cards */
+.site-rail .connect-link,
+.site-rail-drawer .connect-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3125rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-normal);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 0;
+  transition: color var(--transition-fast), transform var(--transition-fast), letter-spacing var(--transition-fast);
+}
+
+.site-rail .connect-link:hover,
+.site-rail .connect-link:focus-visible,
+.site-rail-drawer .connect-link:hover,
+.site-rail-drawer .connect-link:focus-visible {
+  background: transparent;
+  color: var(--foreground);
+  transform: translateX(3px);
+  letter-spacing: 0.1em;
+}
+
+:root[data-theme='vibrant'] .site-rail .connect-link:hover,
+:root[data-theme='vibrant'] .site-rail .connect-link:focus-visible,
+:root[data-theme='vibrant'] .site-rail-drawer .connect-link:hover,
+:root[data-theme='vibrant'] .site-rail-drawer .connect-link:focus-visible {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.site-rail .connect-link-arrow,
+.site-rail-drawer .connect-link-arrow {
+  font-size: 0.59375rem;
+  line-height: 1;
+  opacity: 0.45;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.site-rail .connect-link:hover .connect-link-arrow,
+.site-rail .connect-link:focus-visible .connect-link-arrow,
+.site-rail-drawer .connect-link:hover .connect-link-arrow,
+.site-rail-drawer .connect-link:focus-visible .connect-link-arrow {
+  transform: translate(2px, -2px);
+  opacity: 1;
+}
+
+/* ── projects list in sidebar ── */
+
+.site-rail-section + .site-rail-section {
+  margin-top: 2rem;
+}
+
+.site-rail .project-list,
+.site-rail-drawer .project-list {
+  gap: 0.375rem;
+}
+
+.site-rail .project-link,
+.site-rail-drawer .project-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.site-rail .project-link-index,
+.site-rail-drawer .project-link-index {
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  opacity: 0.45;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.site-rail .project-link:hover .project-link-index,
+.site-rail .project-link:focus-visible .project-link-index,
+.site-rail-drawer .project-link:hover .project-link-index,
+.site-rail-drawer .project-link:focus-visible .project-link-index {
+  opacity: 0.9;
+}
+
+.site-rail .project-link-title,
+.site-rail-drawer .project-link-title {
+  font-size: 0.59375rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.site-rail .project-link-all,
+.site-rail-drawer .project-link-all {
+  margin-top: 0.25rem;
+  padding-top: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme='vibrant'] .site-rail .project-link-all,
+:root[data-theme='vibrant'] .site-rail-drawer .project-link-all {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.site-rail .project-link-all .project-link-title,
+.site-rail-drawer .project-link-all .project-link-title {
+  font-size: 0.59375rem;
+  letter-spacing: 0.14em;
+  color: var(--fg-muted);
+  transition: color var(--transition-fast);
+}
+
+.site-rail .project-link-all:hover .project-link-title,
+.site-rail .project-link-all:focus-visible .project-link-title,
+.site-rail-drawer .project-link-all:hover .project-link-title,
+.site-rail-drawer .project-link-all:focus-visible .project-link-title {
+  color: var(--foreground);
+}
+
+/* ── signature mark at the bottom of the sidebar ── */
+
+.site-rail-signature {
+  margin-top: 2rem;
+  padding-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.sidebar-signature-img {
+  width: clamp(48px, 3.8vw, 58px);
+  height: auto;
+  opacity: 0.50;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+  filter: none;
+}
+
+:root[data-theme='vibrant'] .sidebar-signature-img {
+  filter: invert(1) brightness(1.2);
+}
+
+/* ── compact trigger + drawer (below 72rem) ── */
+
+.rail-trigger {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+:root[data-theme='vibrant'] .rail-trigger {
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.rail-trigger:hover,
+.rail-trigger:focus-visible {
+  border-color: rgba(0, 0, 0, 0.20);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.rail-trigger-mark {
+  line-height: 1;
+  font-size: 0.75rem;
+  transition: transform var(--transition-fast);
+}
+
+.rail-trigger:hover .rail-trigger-mark,
+.rail-trigger:focus-visible .rail-trigger-mark {
+  transform: translate(0.1em, -0.1em);
+}
+
+/* Drawer — a subtle glass panel on smaller viewports */
+.site-rail-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 120;
+  width: min(18rem, 80vw);
+  padding: clamp(3rem, 8vh, 5rem) 1.25rem 2rem;
+  background: color-mix(in oklab, var(--navigation) 85%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 320ms var(--ease), visibility 0s linear 320ms;
+}
+
+:root[data-theme='vibrant'] .site-rail-drawer {
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+.site-rail-drawer-open {
+  transform: none;
+  visibility: visible;
+  transition: transform 320ms var(--ease);
+}
+
+.rail-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.rail-close {
+  font-family: var(--font-mono);
+  font-size: var(--text-editorial);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0.5rem 0.75rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.rail-close:hover,
+.rail-close:focus-visible {
+  border-color: var(--foreground);
+  color: var(--bg);
+  background: var(--foreground);
+}
+
+/* Dark veil behind the open drawer. */
+.rail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgb(0 0 0 / 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms var(--ease);
+}
+
+.rail-overlay-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Below 100rem (1600px) the floating rail has no room in the left gutter, so
+   the trigger + drawer are the only sidebar surface. See the .site-rail gate. */
+@media (min-width: 100rem) {
+  .rail-trigger,
+  .site-rail-drawer,
+  .rail-overlay {
+    display: none;
+  }
+}
+
+/* Forced colours: the rail and drawer are opacity/blur decoration on top of a
+   page that is already a forced background. Let the platform pair govern. */
+@media (forced-colors: active) {
+  .site-rail,
+  .site-rail-drawer {
+    background: Canvas;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .rail-trigger {
+    background: ButtonFace;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ---------- motion ---------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* `forwards`, never `both`.
+
+     `both` also applies the from-state *backwards* â€” before the animation
+     starts â€” so opacity: 0 becomes the element's resting state until the
+     animation runs. Anything that stops it running (a dropped rule, an
+     unresolved custom property, a paused animation, a browser quirk) leaves
+     the content permanently invisible while fully present in the DOM, which is
+     close to undebuggable from the outside: the HTML is right, the CSS is
+     right, and the page is blank.
+
+     With `forwards` the base state stays visible and the animation is purely
+     additive, so a broken entrance animation costs the effect rather than the
+     content. An entrance animation must never be the only thing making
+     content visible. */
+  .hero-inner {
+    animation: rise 620ms var(--ease) forwards;
+  }
+
+  .project-card {
+    animation: rise 560ms var(--ease) forwards;
+    animation-delay: var(--stagger, 0ms);
+  }
+
+  .showcase-item {
+    animation: rise 620ms var(--ease) forwards;
+    animation-delay: var(--stagger, 0ms);
+  }
+}
+
+/* ---------- scroll reveals ----------
+ *
+ * Scroll-driven, so unlike the entrance animations above (which fire once on
+ * load) these track their element's position in the viewport. Applied by adding
+ * `reveal` to anything below the fold.
+ *
+ * Two gates, and both are load-bearing:
+ *
+ * @supports — animation-timeline is Chromium-only as of writing. Without the
+ * gate, Safari and Firefox parse `animation: rise linear forwards`, find no
+ * timeline, and run it as a normal 0s-duration animation. Content still ends
+ * visible because of `forwards`, but it lands with no transition at all.
+ *
+ * prefers-reduced-motion — the global reduce block at the bottom of this file
+ * zeroes animation-duration, which does nothing to a scroll-driven animation:
+ * its progress comes from scroll offset, not elapsed time, so there is no
+ * duration to zero. It has to be prevented from applying in the first place.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: rise linear forwards;
+      animation-timeline: view();
+      /* Ends while the element is still entering. A range that runs too late
+         leaves content mid-fade in the middle of the screen. */
+      animation-range: entry 0% entry 45%;
+    }
+  }
+}
+
+/* ---------- interaction micro-animations ----------
+ *
+ * Press feedback only. Hover states live with their components; these are the
+ * :active counterparts, kept together because they share one rationale: a
+ * pointer-down should register before the navigation resolves.
+ *
+ * Not gated on prefers-reduced-motion individually — the reduce block below
+ * zeroes transition-duration globally, which is the right treatment for a
+ * transform this small.
+ */
+.link-chip:active,
+.theme-toggle:active {
+  transform: scale(0.97);
+}
+
+.site-header-nav a:active {
+  background: var(--bg-hover);
+}
+
+/* Belt and braces: the media query above scopes the animations, and this
+   disables anything added later that forgets to. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

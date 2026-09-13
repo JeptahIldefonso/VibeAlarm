@@ -3,8 +3,8 @@
  * monochromic system. Two layers:
  *
  * 1. The fixed base palette (never user-selectable): a photographic ground
- *    (bg-mono.jpg) under a dark readability veil, #FFFFFF primary ink,
- *    #B3B3B3 muted ink, fixed destructive red. Surfaces are strictly
+ *    (bg-mono.jpg) under a light readability veil, #141414 primary ink,
+ *    #4F4F4F muted ink, fixed destructive red. Surfaces are strictly
  *    achromatic — every non-accent value is R=G=B.
  * 2. The accent — the one runtime-variable part, set from the host's
  *    AccentCatalog (single source of truth, fetched via getAccentLibrary) by
@@ -19,53 +19,100 @@
   /* ---- Photographic ground ----
    *
    * Layer order (bottom → top), same stack as the portfolio:
-   *   1. body::before — bg-mono.jpg, fixed, grayscale, darkened   (z-index: -2)
-   *   2. body         — the readability veil (--bg-photo-veil)
+   *   1. body         — the readability veil (--bg-photo-veil), propagated
+   *                     to the canvas, so it is the bottom-most paint
+   *   2. body::before — bg-mono.jpg, fixed, grayscale, lightened (z-index: -2)
    *   3. app content  — normal flow                                (z-index: 0)
    *   4. body::after  — analog film grain                          (z-index: 1)
    *
-   * The veil's alpha is intentionally high: the photo is atmosphere, never a
-   * mask, and text contrast must not depend on what the photo shows.
+   * The ground is a soft neutral gray (~#C4C4C4): the photo is atmosphere,
+   * never a mask, and text contrast must not depend on what the photo shows.
+   * bg-mono.jpg is a DARK fabric photograph, so the filter on body::before
+   * lifts it into the light range instead of darkening it. Crucially it pulls
+   * CONTRAST DOWN before raising brightness: brightening a dark photo without
+   * compressing it first blows the highlights to flat white (measured: a
+   * 228-mean patch at std 4 — the "too bright" washed-out look), whereas a
+   * compressed range lands entirely inside gamut and stays gray. The folds are
+   * deliberately left legible rather than blurred away — a flat ground reads as
+   * brighter than a textured one at the same mean.
    *
    * The image URL lives on the body::before rule in index.css, NOT here:
    * Vite does not rewrite url() inside custom-property declarations, so a
    * --bg-photo token would ship an un-bundled, un-rebased path. */
-  --bg-photo-opacity: 0.38;
-  --bg-photo-veil: rgba(12, 12, 12, 0.85);
-  --grain-opacity: 0.035;
+  --bg-photo-opacity: 0.35;
+  --bg-photo-veil: rgba(221, 221, 221, 0.85);
+  --grain-opacity: 0.026;
 
   /* ---- Fixed base palette ---- */
   --bg-content: var(--bg-photo-veil);
-  /* Sidebar + bars: translucent glass over the shared ground, so the photo
-     reads through the whole app — one surface, not two boxes. */
-  --bg-chrome: rgba(0, 0, 0, 0.38);
-  --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --danger: #ef4444;
+  /* Sidebar + bars: a DARK gray glass rail over the shared photographic ground
+     — deliberately not the near-white bar of the reference layout, so the rail
+     reads as a distinct panel against the pale content rather than dissolving
+     into it. Because it is dark, everything drawn on it needs its own ink
+     (below) instead of the page's near-black. */
+  --bg-chrome: rgba(64, 64, 68, 0.84);
+  --chrome-ink: #fafafa;
+  --chrome-ink-muted: #cfcfd2;
+  --chrome-border: rgba(255, 255, 255, 0.14);
+  --chrome-hover: rgba(255, 255, 255, 0.1);
+  /* The accent as a mark ON the dark rail — the mirror of --accent-ink. The
+     rail is a MID-dark gray (~#565656), not the near-black the catalog was
+     drawn against, so the raw values are not automatically safe here either:
+     Obsidian Core lands at 2.14:1 and Sunset Red at 1.78:1. Clamping lightness
+     UP fixes them. The floor is set by the SATURATED hues, which carry less
+     relative luminance than a neutral at the same OKLCH lightness — measured,
+     0.88 is where the worst preset (Sunset Red) clears the 3:1 graphic
+     threshold, at 3.50:1. */
+  --accent-on-chrome: color-mix(in srgb, var(--accent) 45%, #ffffff);
+  --text-primary: #141414;
+  --text-secondary: #4f4f4f;
+  --danger: #c62828;
 
   /* ---- Accent state (default Matrix Green; host switches these at runtime) ---- */
   --accent: #22c55e;
   --accent-hover: #34d374;
   --on-accent: #000000;
 
-  /* ---- Cards: hairline separation, near-square editorial corners ---- */
-  --card-bg: rgba(255, 255, 255, 0.05);
-  --card-bg-hover: rgba(255, 255, 255, 0.07);
-  --card-border: rgba(255, 255, 255, 0.10);
-  --card-border-hover: rgba(255, 255, 255, 0.18);
+  /* The accent as INK on the pale ground. The catalog's eight presets were
+     picked against the old dark skin, where a light accent read as a highlight;
+     over paper those same values wash out (Pearl White lands at 1.02:1, below
+     even the 3:1 floor for large text). The fix clamps LIGHTNESS and leaves hue
+     and chroma alone, so an already-dark accent keeps its vibrancy and only the
+     too-light ones are pulled down — measured across all eight presets, the
+     worst case goes 1.02:1 → 4.6:1 (AA) while Neo Blue stays a true blue.
+     Derived, so it re-resolves for free whenever the host rewrites --accent at
+     runtime: the C# AccentCatalog stays the single source of truth.
+     Fills, borders, rings and swatches deliberately keep the TRUE --accent —
+     there the accent is the surface, not the mark on it.
+
+     The srgb mix below is the fallback for engines without relative colour
+     syntax. It must come FIRST and be overridden inside @supports: a custom
+     property accepts almost any token sequence, so an unsupported value would
+     NOT be dropped at parse time — it would poison every var() that uses it. */
+  --accent-ink: color-mix(in srgb, var(--accent) 40%, #101010);
+
+  /* ---- Cards: hairline separation, near-square editorial corners ----
+     On a light ground a card lifts by getting whiter than the page, and the
+     hairline darkens instead of lightening — the inverse of the dark skin. */
+  --card-bg: rgba(255, 255, 255, 0.4);
+  --card-bg-hover: rgba(255, 255, 255, 0.56);
+  --card-border: rgba(0, 0, 0, 0.12);
+  --card-border-hover: rgba(0, 0, 0, 0.22);
   --card-radius: 6px;
   --card-radius-lg: 8px;
   --card-padding: 16px;
   --card-padding-sm: 14px;
   --card-gap: 11px;
 
-  /* Floating surfaces (menus, modals, palette, toasts): near-opaque ink with
-     a glass blur — they must stay readable no matter what sits beneath. */
-  --surface-raised: rgba(20, 20, 20, 0.92);
+  /* Floating surfaces (menus, modals, palette, toasts): near-opaque paper
+     with a glass blur — they must stay readable no matter what sits beneath. */
+  --surface-raised: rgba(240, 240, 240, 0.94);
 
-  /* ---- Fixed semantic badges (never accent-driven) ---- */
-  --badge-amber: #f59e0b; /* "Active Tasks" stat-tile bell */
-  --badge-violet: #8b5cf6; /* "Done Today" stat-tile checkmark */
+  /* ---- Fixed semantic badges (never accent-driven) ----
+     Darkened from the dark skin's 500-weights: the same hues need more depth
+     to hold their own against a pale ground. */
+  --badge-amber: #b45309; /* "Active Tasks" stat-tile bell */
+  --badge-violet: #6d28d9; /* "Done Today" stat-tile checkmark */
 
   /* ---- Typography ----
    * Outfit for display/body (editorial, humanist — the anti-robotic half of
@@ -87,4 +134,16 @@
 
   /* Editorial motion: one easing curve, slightly softer than the default. */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Relative colour syntax: clamp only the accent's LIGHTNESS, preserving hue and
+   chroma, so each preset keeps its identity as ink (Neo Blue stays a true blue
+   instead of the flat navy a straight black-mix produces). Guarded rather than
+   declared twice, because an unsupported value in a custom property is kept,
+   not discarded — see the note on --accent-ink above. */
+@supports (color: oklch(from red min(l, 0.44) c h)) {
+  :root {
+    --accent-ink: oklch(from var(--accent) min(l, 0.44) c h);
+    --accent-on-chrome: oklch(from var(--accent) max(l, 0.88) c h);
+  }
 }

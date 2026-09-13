@@ -31,14 +31,19 @@ body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Native widgets (scrollbars, the date/time pickers in the task modal)
+     follow the skin — without this they render as dark chrome on pale UI. */
+  color-scheme: light;
 }
 
 /* ---- Photographic ground ----
  *
  * bg-mono.jpg, fixed behind everything: sidebar AND content share one ground
  * instead of two boxes. Strictly grayscale (guaranteed by filter, even if the
- * asset is ever replaced with a colour photograph) and darkened so it reads
- * as texture, not as a mask. Static + compositor-promoted: it is never
+ * asset is ever replaced with a colour photograph) and LIFTED into the light
+ * range so it reads as texture on a pale ground, not as dirt: the source is a
+ * dark fabric photograph, so contrast is pulled in and brightness pushed up
+ * (the dark skin did the opposite). Static + compositor-promoted: it is never
  * retransformed, so the blur-free veil and scrolling content composite over
  * the cached layer directly. */
 body::before {
@@ -54,7 +59,15 @@ body::before {
   background-position: center;
   background-repeat: no-repeat;
   opacity: var(--bg-photo-opacity);
-  filter: grayscale(100%) contrast(0.72) brightness(0.8);
+  /* Order matters: compress the range FIRST, then lift it. Compressing before
+     brightening is what keeps the highlights inside gamut — lifting a dark
+     photo directly clips them to flat white, which reads as a washed-out glare
+     rather than gray cloth. No blur(): the upscale from 1024px and the
+     compressed range already carry the softness, and an explicit blur flattened
+     the folds into a featureless gradient (measured mean |gradient| 0.9 against
+     ~3.2 in the reference). Keeping the folds visible is what stops the ground
+     looking bright even at a LOWER mean. */
+  filter: grayscale(100%) contrast(0.5) brightness(1.22);
   will-change: transform;
 }
 
@@ -120,12 +133,14 @@ button {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
-  /* Glass rail over the shared photographic ground — translucent dark with a
-     blur, separated from the content by a hairline, not by a solid fill. */
+  /* Dark gray glass rail over the shared photographic ground, separated from
+     the content by a hairline, not by a solid fill. Its own ink tokens apply
+     to everything inside — the page's near-black would vanish here. */
   background: var(--bg-chrome);
+  color: var(--chrome-ink);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border-right: 1px solid var(--card-border);
+  border-right: 1px solid var(--chrome-border);
   display: flex;
   flex-direction: column;
   padding: var(--space-md) var(--space-sm);
@@ -141,7 +156,9 @@ button {
 
 .sidebar-logo {
   display: inline-flex;
-  color: var(--accent);
+  /* Lightened for the dark rail (see --accent-on-chrome): neither the page's
+     --accent-ink nor the raw catalog value carries here. */
+  color: var(--accent-on-chrome);
 }
 
 .sidebar-name {
@@ -161,7 +178,7 @@ button {
   text-align: left;
   padding: 9px var(--space-sm);
   border-radius: 10px;
-  color: var(--text-secondary);
+  color: var(--chrome-ink-muted);
   font-weight: 500;
   font-size: 13.5px;
   display: flex;
@@ -171,8 +188,8 @@ button {
 }
 
 .nav-item:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--chrome-ink);
+  background: var(--chrome-hover);
 }
 
 .nav-item.active {
@@ -188,7 +205,7 @@ button {
 .sidebar-clock {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--chrome-ink-muted);
   margin: 0;
 }
 
@@ -400,7 +417,7 @@ button {
 }
 
 .task-type {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* Completion checkbox */
@@ -440,7 +457,7 @@ button {
 }
 
 .task-check-mark {
-  color: var(--accent);
+  color: var(--accent-ink);
   display: block;
 }
 
@@ -693,7 +710,7 @@ button {
 
 .icon-btn:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .context-menu {
@@ -710,7 +727,7 @@ button {
   padding: var(--space-xs);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
 }
 
 .context-menu button {
@@ -722,7 +739,7 @@ button {
 }
 
 .context-menu button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .context-menu button.danger {
@@ -750,7 +767,7 @@ button {
   font-weight: 600;
   display: grid;
   place-items: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   transition: background 120ms ease, transform 120ms ease;
   z-index: 30;
 }
@@ -781,7 +798,7 @@ button {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.38);
   display: grid;
   place-items: center;
   z-index: 60;
@@ -798,7 +815,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
 }
 
 .modal-title {
@@ -828,7 +845,7 @@ button {
 }
 
 .field-input {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius);
   color: var(--text-primary);
@@ -836,7 +853,7 @@ button {
   font-family: inherit;
   font-size: 13.5px;
   outline: none;
-  color-scheme: dark;
+  color-scheme: light;
   transition: border-color 120ms var(--ease);
 }
 
@@ -862,7 +879,9 @@ button {
 .alarm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.82);
+  /* Stays a dark scrim even on the light skin: the alarm is a takeover, and
+     dimming the whole page is what makes the card read as urgent. */
+  background: rgba(0, 0, 0, 0.58);
   display: grid;
   place-items: center;
   z-index: 100;
@@ -880,7 +899,7 @@ button {
 
 .alarm-card {
   width: min(420px, calc(100vw - 32px));
-  background: rgba(16, 16, 16, 0.94);
+  background: rgba(244, 244, 244, 0.96);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--accent);
@@ -895,7 +914,7 @@ button {
 }
 
 .alarm-icon {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .alarm-kicker {
@@ -904,7 +923,7 @@ button {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 3px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .alarm-title {
@@ -1066,7 +1085,7 @@ button {
   font-family: var(--font-mono);
   font-size: 28px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .dash-columns {
@@ -1393,7 +1412,7 @@ button {
   display: grid;
   place-items: center;
   font-size: 26px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .ambient-hero-icon.playing {
@@ -1452,8 +1471,8 @@ button {
     to right,
     var(--accent) 0%,
     var(--accent) var(--fill, 70%),
-    rgba(255, 255, 255, 0.12) var(--fill, 70%),
-    rgba(255, 255, 255, 0.12) 100%
+    rgba(0, 0, 0, 0.16) var(--fill, 70%),
+    rgba(0, 0, 0, 0.16) 100%
   );
   outline: none;
   cursor: pointer;
@@ -1466,7 +1485,7 @@ button {
   border-radius: 999px;
   background: var(--accent);
   border: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
 }
 
 .ambient-volume-value {
@@ -1507,7 +1526,7 @@ button {
 
 .ambient-tile-icon {
   font-size: 18px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .ambient-tile-name {
@@ -1556,7 +1575,7 @@ button {
   height: 26px;
   flex-shrink: 0;
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
 .accent-row-name {
@@ -1568,8 +1587,18 @@ button {
 
 .accent-check {
   font-weight: 700;
-  color: var(--row-accent, var(--accent));
+  /* Per-row: each row previews its own preset, so the ink is derived from that
+     row's colour rather than the globally-selected --accent. Same fallback-then
+     -@supports shape as --accent-ink (see tokens.css). */
+  --row-ink: color-mix(in srgb, var(--row-accent, var(--accent)) 40%, #101010);
+  color: var(--row-ink);
   display: inline-flex;
+}
+
+@supports (color: oklch(from red min(l, 0.44) c h)) {
+  .accent-check {
+    --row-ink: oklch(from var(--row-accent, var(--accent)) min(l, 0.44) c h);
+  }
 }
 
 .settings-card {
@@ -1621,7 +1650,7 @@ button {
   height: 22px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
   position: relative;
   transition: background 140ms ease;
 }
@@ -1638,6 +1667,9 @@ button {
   height: 16px;
   border-radius: 999px;
   background: #ffffff;
+  /* The off-state track is only a light gray on the pale skin, so the knob
+     needs its own lift to stay a distinct object. */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
   transition: transform 140ms ease;
 }
 
@@ -1684,7 +1716,7 @@ button {
 .palette-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -1699,7 +1731,7 @@ button {
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--card-border-hover);
   border-radius: var(--card-radius-lg);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1741,7 +1773,7 @@ button {
 }
 
 .palette-item.cursor {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .palette-item-icon {
@@ -1794,12 +1826,12 @@ button {
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
   animation: reminder-in 200ms var(--ease);
 }
 
 .reminder-icon {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 @keyframes reminder-in {
@@ -1819,7 +1851,7 @@ button {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .reminder-title {
