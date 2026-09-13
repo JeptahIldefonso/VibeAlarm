@@ -22,7 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\VibeAlarm.csproj" />
+    <!-- The test suite covers the shared backend + theming core (scheduler state machine,
+         storage, settings, accent catalog, glass alphas, time pulses) — not the UI heads,
+         which are verified by running them. -->
+    <ProjectReference Include="..\..\src\VibeAlarm.Core\VibeAlarm.Core.csproj" />
   </ItemGroup>
 
 </Project>

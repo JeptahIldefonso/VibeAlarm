@@ -1,12 +1,20 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Platform-specific TFM (not plain net10.0-windows) so the WinRT toast
+         APIs (Windows.UI.Notifications) are projected for the OS-scheduled
+         alarm toasts. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- The WebView2 package's targets reference both its WinForms and WPF assemblies
+         for net5.0+ TFMs regardless of UseWPF; with UseWindowsForms=true that surfaces
+         MSB3277 (WindowsBase 4.0 vs 5.0 unification). The WPF assembly is never used
+         here — the conflict is benign and suppressed. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,42 +23,35 @@
     </None>
   </ItemGroup>
 
-  <!-- Typefaces are embedded (not just copied) so FontRegistry can register them with GDI+ via
-       PrivateFontCollection.AddMemoryFont at startup: Windows ships neither Inter nor JetBrains
-       Mono, and a single-file publish has no reliable on-disk Assets path to read from. Both
-       faces are SIL Open Font License 1.1, which permits bundling and redistribution; the
-       license files ship beside them. Excluded from the None glob above to avoid double-include. -->
+  <!-- The React bundle: `npm run build` in ui\ produces ui\dist, which ships
+       beside the exe and is served to WebView2 via the vibealarm.app virtual
+       host mapping (never file://). Not committed to source control — build it
+       with `npm ci &amp;&amp; npm run build` from ui\. -->
   <ItemGroup>
-    <None Remove="Assets\Fonts\*.ttf" />
-    <EmbeddedResource Include="Assets\Fonts\*.ttf" />
-  </ItemGroup>
-
-  <!-- Vector icons follow the same embedding pattern as the fonts above (embedded, not copied:
-       IconSet rasterizes them from the manifest at runtime, and a single-file publish has no
-       reliable on-disk Assets path). Excluded from the None glob to avoid double-include.
-       archery.svg deliberately does NOT live here — it is parked at Assets\archery.svg pending
-       a confirmed use case (no goals/focus feature exists yet). -->
-  <ItemGroup>
-    <None Remove="Assets\Icons\*.svg" />
-    <EmbeddedResource Include="Assets\Icons\*.svg" />
+    <Content Include="ui\dist\**\*" CopyToOutputDirectory="PreserveNewest" TargetPath="ui\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- The installer build script stages a generated installer project under
-       build_staging\ (and dotnet publish output under publish\), and the xUnit test
-       project lives under tests\. These directories sit inside this project's tree, so
-       exclude them from the default .cs glob; otherwise the SDK sweeps up the installer's
-       source/generated obj files (CS0579/CS7022) and the test sources break the WinExe. -->
+       build_staging\ (and dotnet publish output under publish\), the xUnit test
+       project lives under tests\, and the shared backend library under src\.
+       Exclude them from the default .cs glob. NOTE: the React SPA folder (ui\)
+       must NOT be excluded here — MSBuild globs are case-insensitive on Windows,
+       so "ui\**" would also remove the host's UI\ sources. The SPA contains no
+       .cs files, so no exclusion is needed. -->
   <ItemGroup>
     <Compile Remove="build_staging\**" />
     <Compile Remove="publish\**" />
     <Compile Remove="tests\**" />
+    <Compile Remove="src\**" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Guna.UI2.WinForms" Version="2.0.4.8" />
-    <!-- SVG.NET rasterizes the embedded vector icons (GDI+ has no native SVG support; the
-         package recolors fills at render time so icons follow the theme like glyphs do).
-         MIT-licensed. If this pinned version fails to restore, run: dotnet add package Svg -->
-    <PackageReference Include="Svg" Version="3.4.7" />
+    <!-- The shared backend + theming core (scheduler, storage, settings, audio,
+         accent catalog) consumed by this host. -->
+    <ProjectReference Include="src\VibeAlarm.Core\VibeAlarm.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
   </ItemGroup>
 
 </Project>

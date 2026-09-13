@@ -1,0 +1,57 @@
+/*
+ * THE design system — exact values carried over from the locked WinForms palette,
+ * never re-derived. Two layers:
+ *
+ * 1. The fixed base palette (never user-selectable): #121212 content surface over
+ *    a #000000 chrome family, #FFFFFF primary ink, #B3B3B3 muted ink, fixed
+ *    destructive red.
+ * 2. The accent — the one runtime-variable part, set from the host's AccentCatalog
+ *    (single source of truth, fetched via getAccentLibrary) by rewriting the
+ *    --accent* variables on :root. Default: Matrix Green.
+ *
+ * Semantic status colors (the amber/violet metric badges) are fixed here — they
+ * represent meaning, never the accent.
+ */
+:root {
+  /* ---- Fixed base palette ---- */
+  --bg-content: #121212;
+  --bg-chrome: #000000; /* sidebar nav + bottom bars */
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --danger: #ef4444;
+
+  /* ---- Accent state (default Matrix Green; host switches these at runtime) ---- */
+  --accent: #22c55e;
+  --accent-hover: #34d374;
+  --on-accent: #000000;
+
+  /* ---- Cards ---- */
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-bg-hover: rgba(255, 255, 255, 0.07);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.12);
+  --card-radius: 15px; /* 14-16px */
+  --card-radius-lg: 19px; /* 18-20px large panels */
+  --card-padding: 16px;
+  --card-padding-sm: 14px;
+  --card-gap: 11px; /* 10-12px */
+
+  /* ---- Fixed semantic badges (never accent-driven) ---- */
+  --badge-amber: #f59e0b; /* "Active Tasks" stat-tile bell */
+  --badge-violet: #8b5cf6; /* "Done Today" stat-tile checkmark */
+
+  /* ---- Typography ---- */
+  --font-display: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-body: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+
+  /* ---- Spacing (4/8/16/24/40/64) ---- */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-xxl: 64px;
+
+  --sidebar-width: 220px;
+}

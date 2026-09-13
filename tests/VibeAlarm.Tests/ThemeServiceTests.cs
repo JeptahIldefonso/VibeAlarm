@@ -1,96 +1,123 @@
-using System;
-using System.Linq;
-using VibeAlarm.Models;
 using VibeAlarm.Services;
+using VibeAlarm.UI.Theming;
 using Xunit;
 
 namespace VibeAlarm.Tests
 {
     /// <summary>
-    /// Part 3 consolidation: exactly two theme modes (Light/Dark), correct token values, and
-    /// safe migration of legacy (removed 5-preset) theme names persisted in old settings.json.
+    /// The accent-only theme service: the base palette is a fixed constant (exact
+    /// #121212/#000000 values, never retinted), and ApplyAccent publishes the selected
+    /// accent's Base/Hover/OnAccent onto the shared palette state — with unknown-key
+    /// tolerance and idempotent re-application.
+    ///
+    /// Collection: this class and <see cref="UIControlFactoryTests"/> both touch the
+    /// ThemeService.Shared singleton (palette state via ApplyAccent), so they must not
+    /// run in parallel with each other.
     /// </summary>
+    [Collection("ThemeService")]
     public class ThemeServiceTests
     {
         [Fact]
-        public void Presets_contains_exactly_two_entries()
+        public void A_fresh_service_starts_on_the_shipped_default_accent()
+        {
+            var service = new ThemeService();
+            Assert.Equal(VibeAlarmPalette.Accent, AccentCatalog.Default.Base);
+            Assert.Equal(VibeAlarmPalette.AccentHover, AccentCatalog.Default.Hover);
+            Assert.Equal(VibeAlarmPalette.OnAccent, AccentCatalog.Default.OnAccent);
+        }
+
+        [Fact]
+        public void The_base_palette_is_the_fixed_spec_exactly()
+        {
+            // The locked color system: near-black content area, pure-black chrome, soft-white
+            // primary ink, #B3B3B3 muted ink, fixed destructive red. These NEVER move with
+            // the accent.
+            Assert.Equal(System.Drawing.Color.FromArgb(0x12, 0x12, 0x12), VibeAlarmPalette.Surface);
+            Assert.Equal(System.Drawing.Color.FromArgb(0x00, 0x00, 0x00), VibeAlarmPalette.Chrome);
+            Assert.Equal(System.Drawing.Color.FromArgb(0xF3, 0xF3, 0xF3), VibeAlarmPalette.Text);
+            Assert.Equal(System.Drawing.Color.FromArgb(0xB3, 0xB3, 0xB3), VibeAlarmPalette.Muted);
+            Assert.Equal(System.Drawing.Color.FromArgb(0xEF, 0x44, 0x44), VibeAlarmPalette.Error);
+        }
+
+        [Fact]
+        public void ApplyAccent_publishes_the_accent_triple_onto_the_shared_palette()
         {
             var service = ThemeService.Shared;
-            Assert.Equal(2, service.Presets.Count);
-            Assert.Equal(new[] { "Light", "Dark" }, service.Presets.Select(t => t.Name).ToArray());
+            try
+            {
+                AccentOption applied = service.ApplyAccent("Violet System");
+                Assert.Equal("Violet System", applied.Key);
+
+                Assert.Equal(applied.Base, VibeAlarmPalette.Accent);
+                Assert.Equal(applied.Hover, VibeAlarmPalette.AccentHover);
+                Assert.Equal(applied.OnAccent, VibeAlarmPalette.OnAccent);
+                // The tint is a fixed-alpha wash of whatever accent is live (10%).
+                Assert.Equal(System.Drawing.Color.FromArgb(0x1A, applied.Base), VibeAlarmPalette.AccentTint);
+            }
+            finally
+            {
+                // Restore the shipped default for every other test in this collection.
+                service.ApplyAccent(AccentCatalog.DefaultKey);
+            }
         }
 
         [Fact]
-        public void Light_preset_uses_the_specified_palette()
+        public void ApplyAccent_never_touches_the_fixed_base_palette()
         {
-            var light = ThemeService.Shared.FindByName("Light")!;
-            Assert.True(light.IsLight);
-            Assert.Equal(Color(0xFF, 0xFF, 0xFF), light.PrimaryBg);
-            Assert.Equal(Color(0xF7, 0xF7, 0xF5), light.CardBgColor);
-            Assert.Equal(Color(0xEF, 0xEF, 0xED), light.CardHoverBg);
-            Assert.Equal(Color(0x37, 0x35, 0x2F), light.TextColor);
-            Assert.Equal(Color(0x78, 0x77, 0x74), light.MutedTextColor);
-            Assert.Equal(Color(0xE9, 0xE9, 0xE7), light.BorderColor);
-            Assert.Equal(Color(0x0F, 0x6C, 0xBD), light.AccentColor);
-            Assert.Equal(System.Drawing.Color.FromArgb(0x1A, 0x0F, 0x6C, 0xBD), light.AccentTintColor);
+            var service = ThemeService.Shared;
+            try
+            {
+                service.ApplyAccent("Pearl White");
+                // Assignments only — the base palette is a constant, not a blend target.
+                Assert.Equal(System.Drawing.Color.FromArgb(0x12, 0x12, 0x12), VibeAlarmPalette.Surface);
+                Assert.Equal(System.Drawing.Color.FromArgb(0x00, 0x00, 0x00), VibeAlarmPalette.Chrome);
+                Assert.Equal(System.Drawing.Color.FromArgb(0xF3, 0xF3, 0xF3), VibeAlarmPalette.Text);
+                Assert.Equal(System.Drawing.Color.FromArgb(0xB3, 0xB3, 0xB3), VibeAlarmPalette.Muted);
+            }
+            finally
+            {
+                service.ApplyAccent(AccentCatalog.DefaultKey);
+            }
         }
 
         [Fact]
-        public void Light_cards_lift_off_the_page_background()
+        public void ApplyAccent_is_idempotent_across_repeated_and_alternating_applications()
         {
-            // Frontend plan §10.7: cards must read as "raised" against the page — a deliberate lift,
-            // sealed with a hairline border. §14 light uses a subtle Notion-gray card over white.
-            var light = ThemeService.Shared.FindByName("Light")!;
-            Assert.NotEqual(light.PrimaryBg, light.CardBgColor);
-            Assert.Equal(light.SecondaryBg, light.CardBgColor);
-        }
+            var service = ThemeService.Shared;
+            try
+            {
+                service.ApplyAccent("Sunset Red");
+                service.ApplyAccent("Neo Blue");
+                service.ApplyAccent("Neo Blue");
+                Assert.Equal(AccentCatalog.Resolve("Neo Blue").Base, VibeAlarmPalette.Accent);
 
-        [Fact]
-        public void Dark_preset_uses_the_specified_palette()
-        {
-            var dark = ThemeService.Shared.FindByName("Dark")!;
-            Assert.False(dark.IsLight);
-            Assert.Equal(Color(0x19, 0x19, 0x19), dark.PrimaryBg);
-            Assert.Equal(Color(0x20, 0x20, 0x20), dark.CardBgColor);
-            Assert.Equal(Color(0x2A, 0x2A, 0x2A), dark.CardHoverBg);
-            Assert.Equal(Color(0xE9, 0xE9, 0xE7), dark.TextColor);
-            Assert.Equal(Color(0x9B, 0x9B, 0x99), dark.MutedTextColor);
-            Assert.Equal(Color(0x2F, 0x2F, 0x2F), dark.BorderColor);
-            Assert.Equal(Color(0x47, 0x9E, 0xF5), dark.AccentColor);
-            Assert.Equal(System.Drawing.Color.FromArgb(0x1A, 0x47, 0x9E, 0xF5), dark.AccentTintColor);
+                service.ApplyAccent("Solar Amber");
+                service.ApplyAccent("Neo Blue");
+                Assert.Equal(AccentCatalog.Resolve("Neo Blue").Base, VibeAlarmPalette.Accent);
+            }
+            finally
+            {
+                service.ApplyAccent(AccentCatalog.DefaultKey);
+            }
         }
 
         [Theory]
-        [InlineData("Midnight", "Dark")]      // legacy dark
-        [InlineData("Graphite", "Dark")]      // legacy dark
-        [InlineData("Warm Paper", "Light")]   // legacy light
-        [InlineData("Editorial Light", "Light")] // legacy light
-        [InlineData("Stone", "Light")]        // legacy light
-        public void Legacy_theme_names_bucket_to_the_sensible_mode(string legacyName, string expected)
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("not-a-real-accent")]
+        public void ApplyAccent_unknown_keys_fall_back_to_the_default(string? key)
         {
             var service = ThemeService.Shared;
-            ThemePreset resolved = service.ResolveThemeName(legacyName) ?? service.Default;
-            Assert.Equal(expected, resolved.Name);
+            try
+            {
+                AccentOption applied = service.ApplyAccent(key);
+                Assert.Equal(AccentCatalog.DefaultKey, applied.Key);
+                Assert.Equal(System.Drawing.Color.FromArgb(0x22, 0xC5, 0x5E), VibeAlarmPalette.Accent); // Matrix Green
+            }
+            finally
+            {
+                service.ApplyAccent(AccentCatalog.DefaultKey);
+            }
         }
-
-        [Fact]
-        public void Unknown_or_blank_theme_name_defaults_to_light()
-        {
-            var service = ThemeService.Shared;
-            Assert.Equal("Light", (service.ResolveThemeName("SomeFutureTheme") ?? service.Default).Name);
-            Assert.Equal("Light", (service.ResolveThemeName(null) ?? service.Default).Name);
-            Assert.Equal("Light", (service.ResolveThemeName("") ?? service.Default).Name);
-        }
-
-        [Fact]
-        public void Current_names_resolve_directly()
-        {
-            var service = ThemeService.Shared;
-            Assert.Equal("Light", (service.ResolveThemeName("light") ?? service.Default).Name);
-            Assert.Equal("Dark", (service.ResolveThemeName("Dark") ?? service.Default).Name);
-        }
-
-        private static System.Drawing.Color Color(int r, int g, int b)
-            => System.Drawing.Color.FromArgb(r, g, b);
     }
 }

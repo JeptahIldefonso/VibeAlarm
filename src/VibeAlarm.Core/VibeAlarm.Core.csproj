@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>VibeAlarm</RootNamespace>
+    <!-- The shared backend + theming core, consumed by BOTH UI heads (the legacy WinForms
+         app at the repo root and the WinUI 3 app under src\VibeAlarm.App). Deliberately
+         NOT UseWindowsForms/WPF: the only UI-framework dependency left in here is the
+         injected ITicker, so the WinUI head never loads WinForms. System.Drawing is used
+         for Color/Font value types only (palette + FontRegistry), NOT for rendering. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- System.Media.SoundPlayer + SystemSounds (AudioService alarm loop) — Windows-only,
+         ships as a package outside the WindowsDesktop framework. -->
+    <PackageReference Include="System.Windows.Extensions" Version="10.0.0" />
+    <!-- GDI+ value types + PrivateFontCollection (FontRegistry). Windows-only package;
+         replaced by fonts-by-URI when the WinForms head is retired. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

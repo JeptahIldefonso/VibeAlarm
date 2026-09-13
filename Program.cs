@@ -1,13 +1,14 @@
 using System.Windows.Forms;
-using VibeAlarm.UI.Forms;
-using VibeAlarm.UI.Theming;
+using VibeAlarm.Services;
 
 namespace VibeAlarm
 {
     internal static class Program
     {
         /// <summary>
-        ///  The main entry point for the application.
+        /// The main entry point. The WinForms process is the host/shell: it owns the
+        /// window, tray, and business logic; all presentation lives in the React SPA
+        /// hosted by MainForm's WebView2 control.
         /// </summary>
         [STAThread]
         static void Main()
@@ -16,9 +17,10 @@ namespace VibeAlarm
             // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
 
-            // Register the embedded typefaces with GDI+ before any control is constructed —
-            // a Font created against an unregistered family silently falls back to a default.
-            FontRegistry.Initialize();
+            // Before anything else: a Snooze clicked on an OS toast while the app was
+            // closed may have started this very process — route it before the window
+            // exists so the snooze lands deterministically.
+            ToastSchedulerService.InstallActivationRouter();
 
             Application.Run(new MainForm());
         }

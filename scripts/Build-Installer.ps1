@@ -17,8 +17,10 @@ if (Test-Path $installerPath) {
 }
 
 # 2. Publish Project in Release Mode
+# IncludeAllContentForSelfExtract bundles the ui\ SPA (and Assets) inside the
+# single-file exe — the hybrid's WebView2 content travels with the binary.
 Write-Host "Publishing project in Release mode..."
-dotnet publish "$repoRoot\VibeAlarm.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o "$stagingDir\publish"
+dotnet publish "$repoRoot\VibeAlarm.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeAllContentForSelfExtract=true -o "$stagingDir\publish"
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE."
 }

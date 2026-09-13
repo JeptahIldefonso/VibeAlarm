@@ -1,4 +1,5 @@
 <Solution>
-<Project Path="VibeAlarm.csproj" />
-<Project Path="tests\VibeAlarm.Tests\VibeAlarm.Tests.csproj" />
+  <Project Path="src\VibeAlarm.Core\VibeAlarm.Core.csproj" />
+  <Project Path="VibeAlarm.csproj" />
+  <Project Path="tests\VibeAlarm.Tests\VibeAlarm.Tests.csproj" />
 </Solution>

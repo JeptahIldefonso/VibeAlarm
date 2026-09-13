@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Runs the app with the packaged SPA (ui/dist copied into the output).
+      // Use this to test what a Release/published build will look like.
+      "name": "VibeAlarm (packaged UI)",
+      "type": "dotnet",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net10.0-windows10.0.19041.0/VibeAlarm.exe",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      // Hot reload for React code: start the "vite dev server" task once
+      // (Terminal > Run Task), leave it running, then F5 this config.
+      // Edits under ui/src appear instantly — no rebuild needed.
+      "name": "VibeAlarm (Vite hot reload)",
+      "type": "dotnet",
+      "request": "launch",
+      "preLaunchTask": "build: host",
+      "program": "${workspaceFolder}/bin/Debug/net10.0-windows10.0.19041.0/VibeAlarm.exe",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "VIBEALARM_DEV_SERVER": "http://localhost:5173"
+      }
+    }
+  ]
+}
