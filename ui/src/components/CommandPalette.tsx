@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TaskItem } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 import { whenLabel } from '../lib/tasks';
 
 export interface Command {
@@ -115,7 +116,9 @@ export function CommandPalette({
               >
                 {match.kind === 'command' ? (
                   <>
-                    <span className="palette-item-icon" aria-hidden>⌘</span>
+                    <span className="palette-item-icon" aria-hidden>
+                      <Icon name="circle-ellipsis" size={15} />
+                    </span>
                     <span className="palette-item-label">{match.command.label}</span>
                     {match.command.hint != null && (
                       <span className="palette-item-hint">{match.command.hint}</span>
@@ -123,7 +126,9 @@ export function CommandPalette({
                   </>
                 ) : (
                   <>
-                    <span className="palette-item-icon" aria-hidden>⏰</span>
+                    <span className="palette-item-icon" aria-hidden>
+                      <Icon name="bell-ring" size={15} />
+                    </span>
                     <span className="palette-item-label">{match.task.title}</span>
                     <span className="palette-item-hint">{whenLabel(match.task, now)}</span>
                   </>

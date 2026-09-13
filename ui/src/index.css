@@ -59,7 +59,8 @@ button {
 }
 
 .sidebar-logo {
-  font-size: 18px;
+  display: inline-flex;
+  color: var(--accent);
 }
 
 .sidebar-name {
@@ -82,6 +83,9 @@ button {
   color: var(--text-secondary);
   font-weight: 500;
   font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   transition: background 120ms ease, color 120ms ease;
 }
 
@@ -138,6 +142,17 @@ button {
   padding-top: var(--space-lg);
 }
 
+/* ---- Icons ---- */
+
+/* Inline SVG icon set (components/Icon.tsx). Inline-block with a slight
+   baseline nudge so icons sit centered next to button text; inside flex/grid
+   parents the vertical-align is ignored and the container centers them. */
+.icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+
 /* ---- Toolbar + search ---- */
 
 .view-toolbar {
@@ -146,21 +161,35 @@ button {
   align-items: center;
 }
 
-.search-input {
+/* The search input + its leading icon. The wrapper owns the chrome (border,
+   background, focus ring) so the icon sits inside the field's outline. */
+.search-field {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius);
-  color: var(--text-primary);
-  padding: 10px var(--card-padding-sm);
-  font-family: inherit;
-  font-size: 13.5px;
-  outline: none;
+  padding: 0 var(--card-padding-sm);
+  color: var(--text-secondary);
   transition: border-color 120ms ease;
 }
 
-.search-input:focus {
+.search-field:focus-within {
   border-color: var(--accent);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 10px 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  outline: none;
 }
 
 .search-input::placeholder {
@@ -176,6 +205,9 @@ button {
   font-size: 13.5px;
   padding: 10px var(--space-md);
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   transition: background 120ms ease;
   white-space: nowrap;
 }
@@ -195,6 +227,9 @@ button {
   padding: 10px var(--space-md);
   border-radius: 999px;
   border: 1px solid var(--card-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   transition: color 120ms ease, border-color 120ms ease;
 }
 
@@ -309,9 +344,7 @@ button {
 
 .task-check-mark {
   color: var(--on-accent);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
+  display: block;
 }
 
 /* Card actions + context menu */
@@ -528,6 +561,10 @@ button {
   box-shadow: 0 0 80px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
+.alarm-icon {
+  color: var(--accent);
+}
+
 .alarm-kicker {
   margin: 0;
   font-family: var(--font-mono);
@@ -665,6 +702,9 @@ button {
   font-weight: 700;
   letter-spacing: 3px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .nextup-title {
@@ -967,6 +1007,7 @@ button {
   display: grid;
   place-items: center;
   font-size: 26px;
+  color: var(--accent);
 }
 
 .ambient-hero-icon.playing {
@@ -1142,6 +1183,7 @@ button {
 .accent-check {
   font-weight: 700;
   color: var(--row-accent, var(--accent));
+  display: inline-flex;
 }
 
 .settings-card {
@@ -1316,7 +1358,9 @@ button {
 
 .palette-item-icon {
   width: 20px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-secondary);
   flex-shrink: 0;
 }
@@ -1358,10 +1402,14 @@ button {
   padding: var(--card-padding-sm);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-md);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   animation: reminder-in 200ms ease;
+}
+
+.reminder-icon {
+  color: var(--accent);
 }
 
 @keyframes reminder-in {
@@ -1394,6 +1442,7 @@ button {
   color: var(--text-secondary);
   font-size: 18px;
   line-height: 1;
+  margin-left: auto;
 }
 
 .reminder-close:hover {

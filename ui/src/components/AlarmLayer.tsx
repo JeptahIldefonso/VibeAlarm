@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { request, subscribe } from '../bridge/client';
 import type { TaskItem } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 import { whenLabel } from '../lib/tasks';
 
 /**
@@ -36,6 +37,9 @@ export function AlarmLayer({ now }: { now: Date }) {
       {alarm != null && (
         <div className="alarm-overlay" role="alertdialog" aria-label={`Alarm: ${alarm.title}`}>
           <div className="alarm-card">
+            <span className="alarm-icon" aria-hidden>
+              <Icon name="siren" size={28} />
+            </span>
             <p className="alarm-kicker">ALARM</p>
             <h1 className="alarm-title">{alarm.title}</h1>
             <p className="alarm-when">{whenLabel(alarm, now)}</p>
@@ -67,6 +71,9 @@ export function AlarmLayer({ now }: { now: Date }) {
 
       {reminders.map(({ task, id }) => (
         <div key={id} className="reminder-toast" role="status">
+          <span className="reminder-icon" aria-hidden>
+            <Icon name="bell-ring" size={15} />
+          </span>
           <div>
             <p className="reminder-kicker">REMINDER</p>
             <p className="reminder-title">{task.title}</p>

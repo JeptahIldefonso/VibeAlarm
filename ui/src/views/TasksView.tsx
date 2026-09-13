@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { request } from '../bridge/client';
 import type { TaskItem } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 import type { TaskModalState } from '../components/TaskModal';
 import { isPast, isToday, isUpcoming, taskDateTime, whenLabel } from '../lib/tasks';
 
@@ -64,16 +65,19 @@ export function TasksView({
   return (
     <div className="view view-flow">
       <div className="view-toolbar">
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Search tasks…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search tasks"
-        />
+        <div className="search-field">
+          <Icon name="search-check" size={15} />
+          <input
+            className="search-input"
+            type="search"
+            placeholder="Search tasks…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search tasks"
+          />
+        </div>
         <button type="button" className="btn-primary" onClick={openCreate}>
-          + New Task
+          <Icon name="clock-plus" size={15} /> New Task
         </button>
       </div>
 
@@ -120,7 +124,7 @@ export function TasksView({
       />
 
       <button type="button" className="fab" aria-label="New task" onClick={openCreate}>
-        +
+        <Icon name="clock-plus" size={22} />
       </button>
     </div>
   );
@@ -224,7 +228,11 @@ function TaskCard({
         role="checkbox"
         onClick={() => call(() => request('toggleComplete', { id: task.id }))}
       >
-        {task.completed && <span className="task-check-mark">✓</span>}
+        {task.completed && (
+          <span className="task-check-mark" aria-hidden>
+            <Icon name="check" size={12} />
+          </span>
+        )}
       </button>
 
       <div className="task-card-main">
@@ -242,7 +250,7 @@ function TaskCard({
           aria-label="Task actions"
           onClick={() => setMenuFor(menuOpen ? null : task.id)}
         >
-          ⋯
+          <Icon name="circle-ellipsis" size={16} />
         </button>
         {menuOpen && (
           <div className="context-menu" role="menu">

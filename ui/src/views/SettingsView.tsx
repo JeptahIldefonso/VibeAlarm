@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { request } from '../bridge/client';
 import type { AccentOption, AppSettings } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 
 /**
  * The Settings view: the 8-preset accent library (a click re-publishes the CSS
@@ -76,7 +77,11 @@ export function SettingsView({
             >
               <span className="accent-swatch" style={{ background: accent.base }} aria-hidden />
               <span className="accent-row-name">{accent.key}</span>
-              {accent.key === settings.accentColor && <span className="accent-check" aria-hidden>✓</span>}
+              {accent.key === settings.accentColor && (
+                <span className="accent-check" aria-hidden>
+                  <Icon name="check" size={14} />
+                </span>
+              )}
             </button>
           ))}
         </div>

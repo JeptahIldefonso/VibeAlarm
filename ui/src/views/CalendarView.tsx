@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { request } from '../bridge/client';
 import type { AppSettings, TaskItem } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 import type { TaskModalState } from '../components/TaskModal';
 import { formatTime, taskDateTime } from '../lib/tasks';
 
@@ -122,7 +123,7 @@ export function CalendarView({
             className="btn-primary cal-add-btn"
             onClick={() => openModal({ mode: 'create', task: null, presetDate: selected })}
           >
-            + Add task
+            <Icon name="clock-plus" size={15} /> Add task
           </button>
         </div>
         {selectedTasks.length === 0 ? (

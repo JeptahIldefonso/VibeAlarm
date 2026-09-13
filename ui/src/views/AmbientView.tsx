@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { request } from '../bridge/client';
 import type { AmbientSound } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 
 /**
  * The Ambient view: a hero card for whatever is playing, the volume slider
@@ -59,7 +60,7 @@ export function AmbientView({
     <div className="view view-center">
       <section className="ambient-hero" aria-label="Now playing">
         <span className={`ambient-hero-icon${playing ? ' playing' : ''}`} aria-hidden>
-          {playing ? '🎵' : '🌙'}
+          <Icon name="audio-lines" size={26} />
         </span>
         <div className="ambient-hero-main">
           <p className="ambient-hero-kicker">{playing ? 'NOW PLAYING' : 'AMBIENT SOUND'}</p>

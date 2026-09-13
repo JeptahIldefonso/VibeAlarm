@@ -1,4 +1,5 @@
 import type { TaskItem } from '../bridge/protocol';
+import { Icon } from '../components/Icon';
 import { taskDateTime, whenLabel } from '../lib/tasks';
 
 /**
@@ -31,14 +32,18 @@ export function DashboardView({ tasks, now, nextUp }: {
 
       <div className="stat-row">
         <div className="stat-tile">
-          <div className="stat-badge amber" aria-hidden>🔔</div>
+          <div className="stat-badge amber" aria-hidden>
+            <Icon name="bell-ring" size={18} />
+          </div>
           <div>
             <p className="stat-value">{active.length}</p>
             <p className="stat-label">Active Tasks</p>
           </div>
         </div>
         <div className="stat-tile">
-          <div className="stat-badge violet" aria-hidden>✓</div>
+          <div className="stat-badge violet" aria-hidden>
+            <Icon name="circle-check" size={18} />
+          </div>
           <div>
             <p className="stat-value">{doneToday.length}</p>
             <p className="stat-label">Done Today</p>
@@ -49,14 +54,18 @@ export function DashboardView({ tasks, now, nextUp }: {
       <section className="nextup-card" aria-label="Next up">
         {nextUp != null ? (
           <>
-            <p className="nextup-kicker">NEXT UP</p>
+            <p className="nextup-kicker">
+              <Icon name="calendar-check-2" size={14} /> NEXT UP
+            </p>
             <h2 className="nextup-title">{nextUp.title}</h2>
             <p className="nextup-when">{whenLabel(nextUp, now)}</p>
             <p className="nextup-countdown" aria-live="off">{countdown}</p>
           </>
         ) : (
           <>
-            <p className="nextup-kicker">NEXT UP</p>
+            <p className="nextup-kicker">
+              <Icon name="calendar-check-2" size={14} /> NEXT UP
+            </p>
             <p className="nextup-title muted">Nothing scheduled</p>
             <p className="muted">Create a task to see it here.</p>
           </>

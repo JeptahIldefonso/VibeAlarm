@@ -3,6 +3,7 @@ import { isHostAvailable, request } from './bridge/client';
 import { useBridgeState } from './app/useBridgeState';
 import { AlarmLayer } from './components/AlarmLayer';
 import { CommandPalette, type Command } from './components/CommandPalette';
+import { Icon, type IconName } from './components/Icon';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { AmbientView, useAmbientVolume } from './views/AmbientView';
 import { CalendarView } from './views/CalendarView';
@@ -12,6 +13,14 @@ import { TasksView } from './views/TasksView';
 
 const VIEWS = ['Dashboard', 'Tasks', 'Calendar', 'Ambient', 'Settings'] as const;
 type ViewName = (typeof VIEWS)[number];
+
+const VIEW_ICONS: Record<ViewName, IconName> = {
+  Dashboard: 'siren',
+  Tasks: 'clipboard-list',
+  Calendar: 'calendar-days',
+  Ambient: 'audio-lines',
+  Settings: 'sliders-horizontal',
+};
 
 /**
  * The app shell: black chrome sidebar (nav + app identity) over the #121212
@@ -104,7 +113,9 @@ export default function App() {
     <div className="app">
       <nav className="sidebar">
         <div className="sidebar-brand">
-          <span className="sidebar-logo">⏰</span>
+          <span className="sidebar-logo" aria-hidden>
+            <Icon name="bell-ring" size={18} />
+          </span>
           <span className="sidebar-name">VibeAlarm</span>
         </div>
         <div className="sidebar-nav">
@@ -115,7 +126,8 @@ export default function App() {
               className={view === activeView ? 'nav-item active' : 'nav-item'}
               onClick={() => setActiveView(view)}
             >
-              {view}
+              <Icon name={VIEW_ICONS[view]} size={16} />
+              <span>{view}</span>
             </button>
           ))}
         </div>
