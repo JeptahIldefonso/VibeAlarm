@@ -9,7 +9,12 @@
       "request": "launch",
       "preLaunchTask": "build",
       "program": "${workspaceFolder}/bin/Debug/net10.0-windows10.0.19041.0/VibeAlarm.exe",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        // Empty value = force the packaged UI (Debug builds default to the Vite
+        // dev server when this is unset).
+        "VIBEALARM_DEV_SERVER": ""
+      }
     },
     {
       // Hot reload for React code: start the "vite dev server" task once

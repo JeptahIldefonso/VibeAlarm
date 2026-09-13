@@ -141,12 +141,38 @@ namespace VibeAlarm
             bridge.Attach(core);
 
 #if DEBUG
-            // Dev: the Vite dev server for hot reload (opt out via VIBEALARM_DEV_SERVER).
+            // Dev: the Vite dev server for hot reload (VIBEALARM_DEV_SERVER, default
+            // http://localhost:5173). An empty value forces the packaged UI, and so
+            // does an unreachable dev server — a Debug build should always show the
+            // app, never a connection-refused page.
             string devServer = Environment.GetEnvironmentVariable("VIBEALARM_DEV_SERVER") ?? "http://localhost:5173";
-            core.Navigate(devServer);
+            if (devServer.Length == 0 || !CanReach(devServer))
+            {
+                core.Navigate($"https://{VirtualHost}/index.html");
+            }
+            else
+            {
+                core.Navigate(devServer);
+            }
 #else
             core.Navigate($"https://{VirtualHost}/index.html");
 #endif
+        }
+
+        /// <summary>Quick TCP probe so a Debug launch without a running dev server
+        /// falls back to the packaged UI instead of showing an error page.</summary>
+        private static bool CanReach(string url)
+        {
+            try
+            {
+                if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return false;
+                using var probe = new System.Net.Sockets.TcpClient();
+                return probe.ConnectAsync(uri.Host, uri.Port).Wait(500) && probe.Connected;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // ---- Service wiring (scheduler + time, translated to IPC pushes) ----
