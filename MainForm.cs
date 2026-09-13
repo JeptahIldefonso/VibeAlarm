@@ -67,8 +67,11 @@ namespace VibeAlarm
 
             Text = "VibeAlarm";
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(1280, 800);
-            MinimumSize = new Size(940, 640);
+            // The SPA renders at 125% display scale (html zoom in index.css), so
+            // the window is grown by the same factor to keep the amount of visible
+            // content identical to the old 1280x800.
+            ClientSize = new Size(1600, 1000);
+            MinimumSize = new Size(1200, 820);
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             // The SPA is dark; a black host surface avoids a white flash before WebView2
             // has painted anything.

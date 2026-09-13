@@ -1,21 +1,44 @@
 /*
- * THE design system — exact values carried over from the locked WinForms palette,
- * never re-derived. Two layers:
+ * THE design system — Monochrome Raw Luxury, adapted from the portfolio's
+ * monochromic system. Two layers:
  *
- * 1. The fixed base palette (never user-selectable): #121212 content surface over
- *    a #000000 chrome family, #FFFFFF primary ink, #B3B3B3 muted ink, fixed
- *    destructive red.
- * 2. The accent — the one runtime-variable part, set from the host's AccentCatalog
- *    (single source of truth, fetched via getAccentLibrary) by rewriting the
- *    --accent* variables on :root. Default: Matrix Green.
+ * 1. The fixed base palette (never user-selectable): a photographic ground
+ *    (bg-mono.jpg) under a dark readability veil, #FFFFFF primary ink,
+ *    #B3B3B3 muted ink, fixed destructive red. Surfaces are strictly
+ *    achromatic — every non-accent value is R=G=B.
+ * 2. The accent — the one runtime-variable part, set from the host's
+ *    AccentCatalog (single source of truth, fetched via getAccentLibrary) by
+ *    rewriting the --accent* variables on :root. Default: Matrix Green.
+ *    The accent stays: it is VibeAlarm's personality, and "one accent over a
+ *    monochrome ground" is exactly the raw-luxury recipe.
  *
  * Semantic status colors (the amber/violet metric badges) are fixed here — they
  * represent meaning, never the accent.
  */
 :root {
+  /* ---- Photographic ground ----
+   *
+   * Layer order (bottom → top), same stack as the portfolio:
+   *   1. body::before — bg-mono.jpg, fixed, grayscale, darkened   (z-index: -2)
+   *   2. body         — the readability veil (--bg-photo-veil)
+   *   3. app content  — normal flow                                (z-index: 0)
+   *   4. body::after  — analog film grain                          (z-index: 1)
+   *
+   * The veil's alpha is intentionally high: the photo is atmosphere, never a
+   * mask, and text contrast must not depend on what the photo shows.
+   *
+   * The image URL lives on the body::before rule in index.css, NOT here:
+   * Vite does not rewrite url() inside custom-property declarations, so a
+   * --bg-photo token would ship an un-bundled, un-rebased path. */
+  --bg-photo-opacity: 0.38;
+  --bg-photo-veil: rgba(12, 12, 12, 0.85);
+  --grain-opacity: 0.035;
+
   /* ---- Fixed base palette ---- */
-  --bg-content: #121212;
-  --bg-chrome: #000000; /* sidebar nav + bottom bars */
+  --bg-content: var(--bg-photo-veil);
+  /* Sidebar + bars: translucent glass over the shared ground, so the photo
+     reads through the whole app — one surface, not two boxes. */
+  --bg-chrome: rgba(0, 0, 0, 0.38);
   --text-primary: #ffffff;
   --text-secondary: #b3b3b3;
   --danger: #ef4444;
@@ -25,25 +48,32 @@
   --accent-hover: #34d374;
   --on-accent: #000000;
 
-  /* ---- Cards ---- */
+  /* ---- Cards: hairline separation, near-square editorial corners ---- */
   --card-bg: rgba(255, 255, 255, 0.05);
   --card-bg-hover: rgba(255, 255, 255, 0.07);
-  --card-border: rgba(255, 255, 255, 0.08);
-  --card-border-hover: rgba(255, 255, 255, 0.12);
-  --card-radius: 15px; /* 14-16px */
-  --card-radius-lg: 19px; /* 18-20px large panels */
+  --card-border: rgba(255, 255, 255, 0.10);
+  --card-border-hover: rgba(255, 255, 255, 0.18);
+  --card-radius: 6px;
+  --card-radius-lg: 8px;
   --card-padding: 16px;
   --card-padding-sm: 14px;
-  --card-gap: 11px; /* 10-12px */
+  --card-gap: 11px;
+
+  /* Floating surfaces (menus, modals, palette, toasts): near-opaque ink with
+     a glass blur — they must stay readable no matter what sits beneath. */
+  --surface-raised: rgba(20, 20, 20, 0.92);
 
   /* ---- Fixed semantic badges (never accent-driven) ---- */
   --badge-amber: #f59e0b; /* "Active Tasks" stat-tile bell */
   --badge-violet: #8b5cf6; /* "Done Today" stat-tile checkmark */
 
-  /* ---- Typography ---- */
-  --font-display: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-  --font-body: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  /* ---- Typography ----
+   * Outfit for display/body (editorial, humanist — the anti-robotic half of
+   * the identity), JetBrains Mono for kickers, meta and time. Both bundled
+   * from @fontsource-variable so the app works fully offline. */
+  --font-display: 'Outfit Variable', Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Outfit Variable', Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
 
   /* ---- Spacing (4/8/16/24/40/64) ---- */
   --space-xs: 4px;
@@ -54,4 +84,7 @@
   --space-xxl: 64px;
 
   --sidebar-width: 220px;
+
+  /* Editorial motion: one easing curve, slightly softer than the default. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }

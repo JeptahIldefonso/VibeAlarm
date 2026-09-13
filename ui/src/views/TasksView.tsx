@@ -230,7 +230,7 @@ function TaskCard({
       >
         {task.completed && (
           <span className="task-check-mark" aria-hidden>
-            <Icon name="check" size={12} />
+            <Icon name="circle-check-big" size={22} />
           </span>
         )}
       </button>

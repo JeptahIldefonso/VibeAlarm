@@ -60,6 +60,14 @@ export function CalendarView({
       if (list != null) list.push(task);
       else map.set(key, [task]);
     }
+    // Schedule order inside each day, matching the detail list below.
+    for (const list of map.values()) {
+      list.sort((a, b) => {
+        const da = taskDateTime(a)?.getTime() ?? 0;
+        const db = taskDateTime(b)?.getTime() ?? 0;
+        return da - db;
+      });
+    }
     return map;
   }, [tasks]);
 
@@ -90,28 +98,36 @@ export function CalendarView({
           {WEEKDAYS.map((d) => <span key={d} className="cal-weekday">{d}</span>)}
         </div>
         <div className="cal-grid">
-          {cells.map((cell) => (
-            <button
-              key={cell.key}
-              type="button"
-              className={`cal-cell${cell.other ? ' other' : ''}${cell.key === selected ? ' selected' : ''}`}
-              onClick={() => setSelected(cell.key)}
-            >
-              <span
-                className={`cal-day-num${cell.key === toKey(now) ? ' today' : ''}`}
-                aria-hidden
+          {cells.map((cell) => {
+            const dayTasks = byDay.get(cell.key);
+            return (
+              <button
+                key={cell.key}
+                type="button"
+                className={`cal-cell${cell.other ? ' other' : ''}${cell.key === selected ? ' selected' : ''}`}
+                aria-label={cellDateLabel(cell.key)}
+                onClick={() => setSelected(cell.key)}
               >
-                {cell.day}
-              </span>
-              {(byDay.get(cell.key)?.length ?? 0) > 0 && (
-                <span className="cal-dots" aria-hidden>
-                  {byDay.get(cell.key)!.slice(0, 3).map((task, i) => (
-                    <span key={i} className={`cal-dot ${task.type.toLowerCase()}`} />
-                  ))}
+                <span
+                  className={`cal-day-num${cell.key === toKey(now) ? ' today' : ''}`}
+                  aria-hidden
+                >
+                  {cell.day}
                 </span>
-              )}
-            </button>
-          ))}
+                {(dayTasks?.length ?? 0) > 0 && (
+                  <span className="cal-items" aria-hidden>
+                    {dayTasks!.slice(0, 3).map((task, i) => (
+                      <span key={task.id} className={`cal-item ${task.type.toLowerCase()}`}>
+                        <span className="cal-item-name">{task.title}</span>
+                        {/* More than three: "…" on the end of the last shown name. */}
+                        {i === 2 && dayTasks!.length > 3 && <span className="cal-item-more">…</span>}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -167,6 +183,12 @@ function detailLabel(key: string, now: Date): string {
   if (date == null) return 'SELECTED DAY';
   if (date.toDateString() === now.toDateString()) return 'TODAY';
   return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+}
+
+/** Accessible name for a day cell — the date, since the cell's visual contents are aria-hidden. */
+function cellDateLabel(key: string): string {
+  const date = fromKey(key);
+  return date == null ? key : date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function startOfMonth(date: Date): Date {

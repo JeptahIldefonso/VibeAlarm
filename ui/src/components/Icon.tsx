@@ -62,6 +62,13 @@ const PATHS = {
       <path d="m16 9-5.5 5.5L8 12" />
     </>
   ),
+  // The task "done" marker — from Assets/circle-check-big(1).svg.
+  'circle-check-big': (
+    <>
+      <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+      <path d="m9 11 3 3L22 4" />
+    </>
+  ),
   'circle-ellipsis': (
     <>
       <circle cx="12" cy="12" r="10" />

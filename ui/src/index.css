@@ -11,13 +11,89 @@ body,
   margin: 0;
 }
 
+/* Display scale: the whole UI renders at 125% (user-chosen — matches the
+   Ctrl+= zoom the design was signed off on). Declared on the ROOT element:
+   Chromium propagates root zoom to the viewport itself, so it behaves exactly
+   like browser zoom — fixed-position overlays (modal, palette, alarm, toasts,
+   FAB), vh/vw units and the photo ground all scale together and stay glued to
+   the viewport edges. Zoom on an inner element (e.g. #root) would instead
+   re-scale fixed descendants against an unscaled viewport and misplace them. */
+html {
+  zoom: 1.25;
+}
+
 body {
+  /* The readability veil over the photographic ground (see tokens.css for the
+     full layer stack). Translucent on purpose — the photo bleeds through. */
   background: var(--bg-content);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+/* ---- Photographic ground ----
+ *
+ * bg-mono.jpg, fixed behind everything: sidebar AND content share one ground
+ * instead of two boxes. Strictly grayscale (guaranteed by filter, even if the
+ * asset is ever replaced with a colour photograph) and darkened so it reads
+ * as texture, not as a mask. Static + compositor-promoted: it is never
+ * retransformed, so the blur-free veil and scrolling content composite over
+ * the cached layer directly. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  /* Direct url() on the rule (not via a token) so Vite bundles and rebase the
+     asset — url() inside custom properties is not processed. */
+  background-image: url('./assets/bg-mono.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--bg-photo-opacity);
+  filter: grayscale(100%) contrast(0.72) brightness(0.8);
+  will-change: transform;
+}
+
+/* ---- Analog film grain ----
+ *
+ * The "raw" half of the identity: feTurbulence noise as an inline data-URI
+ * tile, repeated over the whole viewport at ~3.5% — felt, not seen.
+ * pointer-events: none is load-bearing (the layer covers everything); the
+ * no-blend note from the portfolio applies doubly here — blending
+ * full-viewport noise would re-blend every frame. Rasterised once, it is
+ * free. Sits above the app (z 1) but below floating surfaces (z ≥ 40). */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  will-change: transform;
+}
+
+/* Keyboard focus — the one thing the old skin never drew. Two-pixel accent
+   ring, only for keyboard navigation; mouse clicks never see it. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Editorial display tracking: tight at large sizes, where confidence reads
+   as cramped at small ones (which keep the body default). */
+.dash-greeting,
+.modal-title,
+.alarm-title,
+.nextup-title,
+.cal-month-label,
+.ambient-hero-title {
+  letter-spacing: -0.02em;
 }
 
 button {
@@ -44,7 +120,12 @@ button {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
+  /* Glass rail over the shared photographic ground — translucent dark with a
+     blur, separated from the content by a hairline, not by a solid fill. */
   background: var(--bg-chrome);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-right: 1px solid var(--card-border);
   display: flex;
   flex-direction: column;
   padding: var(--space-md) var(--space-sm);
@@ -204,11 +285,11 @@ button {
   font-weight: 600;
   font-size: 13.5px;
   padding: 10px var(--space-md);
-  border-radius: 999px;
+  border-radius: var(--card-radius);
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transition: background 120ms ease;
+  transition: background 120ms var(--ease);
   white-space: nowrap;
 }
 
@@ -225,12 +306,12 @@ button {
   color: var(--text-secondary);
   font-weight: 500;
   padding: 10px var(--space-md);
-  border-radius: 999px;
+  border-radius: var(--card-radius);
   border: 1px solid var(--card-border);
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition: color 120ms var(--ease), border-color 120ms var(--ease);
 }
 
 .btn-ghost:hover {
@@ -255,7 +336,7 @@ button {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   color: var(--text-secondary);
 }
 
@@ -305,7 +386,9 @@ button {
 }
 
 .task-title.done {
-  color: var(--text-secondary);
+  /* White per user preference — completion is signaled by the strike-through
+     alone, not by dimming the text. */
+  color: var(--text-primary);
   text-decoration: line-through;
 }
 
@@ -326,10 +409,17 @@ button {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  /* Extra lead-in so the title/meta block clears the (slightly overflowing)
+     22px done icon with visible breathing room. */
+  margin-right: 6px;
   border-radius: 999px;
   border: 1.5px solid var(--card-border-hover);
-  display: grid;
-  place-items: center;
+  /* Flex, not grid: the 22px done icon exceeds this 20px box, and a grid's
+     auto track overflows toward one side (pushing the icon into the text
+     gap), while flex centering splits the overflow symmetrically. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background 120ms ease, border-color 120ms ease;
 }
 
@@ -337,13 +427,20 @@ button {
   border-color: var(--accent);
 }
 
+/* Done state: the circle-check-big icon draws its own circle + check in the
+   accent color — no filled disc behind it. */
 .task-check.checked {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: transparent;
+  border-color: transparent;
+}
+
+/* …so the hover ring (meant for the empty circle) must not double up on it. */
+.task-check.checked:hover {
+  border-color: transparent;
 }
 
 .task-check-mark {
-  color: var(--on-accent);
+  color: var(--accent);
   display: block;
 }
 
@@ -356,7 +453,7 @@ button {
 .icon-btn {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--card-radius);
   color: var(--text-secondary);
   font-size: 16px;
   line-height: 1;
@@ -375,9 +472,11 @@ button {
   top: 34px;
   z-index: 40;
   min-width: 170px;
-  background: #242424;
+  background: var(--surface-raised);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--card-border-hover);
-  border-radius: 12px;
+  border-radius: var(--card-radius);
   padding: var(--space-xs);
   display: flex;
   flex-direction: column;
@@ -387,7 +486,7 @@ button {
 .context-menu button {
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 13px;
   color: var(--text-primary);
 }
@@ -460,7 +559,9 @@ button {
 
 .modal-card {
   width: min(420px, calc(100vw - 32px));
-  background: #242424;
+  background: var(--surface-raised);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--card-border-hover);
   border-radius: var(--card-radius-lg);
   padding: var(--space-lg);
@@ -497,16 +598,16 @@ button {
 }
 
 .field-input {
-  background: var(--bg-content);
+  background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--card-border);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   color: var(--text-primary);
   padding: 9px 12px;
   font-family: inherit;
   font-size: 13.5px;
   outline: none;
   color-scheme: dark;
-  transition: border-color 120ms ease;
+  transition: border-color 120ms var(--ease);
 }
 
 .field-input:focus {
@@ -549,7 +650,9 @@ button {
 
 .alarm-card {
   width: min(420px, calc(100vw - 32px));
-  background: #1a1a1a;
+  background: rgba(16, 16, 16, 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--accent);
   border-radius: var(--card-radius-lg);
   padding: var(--space-xl) var(--space-lg);
@@ -647,7 +750,7 @@ button {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: var(--card-radius);
   display: grid;
   place-items: center;
   font-size: 18px;
@@ -717,6 +820,9 @@ button {
 .nextup-title.muted {
   font-size: 17px;
   font-weight: 500;
+  /* Empty state keeps its smaller size but stays full white — the card's
+     title reads as a title, the hint line below carries the muted role. */
+  color: var(--text-primary);
 }
 
 .nextup-when {
@@ -873,20 +979,31 @@ button {
   padding: var(--space-xs) 0;
 }
 
+/* Flat cells (not tall): 6 week rows + the day detail with its Add-task
+   button must fit one screen. Every cell is a real bordered card, like the
+   WinForms calendar this view descends from — the grid reads as a calendar,
+   not floating numbers. */
 .cal-cell {
-  aspect-ratio: 1 / 0.86;
-  min-height: 58px;
-  border-radius: 12px;
+  aspect-ratio: 1 / 0.7;
+  min-height: 48px;
+  /* min-width 0 is load-bearing: grid items default to min-width auto, so a
+     nowrap task name's min-content width would blow out the 1fr columns and
+     resize the whole grid. With 0 the name ellipsizes inside the fixed cell. */
+  min-width: 0;
+  border-radius: var(--card-radius);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch; /* task-name rows run the full cell width; the number re-centers below */
   gap: 4px;
   padding: 6px 2px;
-  transition: background 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
 .cal-cell:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--card-bg-hover);
+  border-color: var(--card-border-hover);
 }
 
 .cal-cell.other .cal-day-num {
@@ -894,15 +1011,16 @@ button {
 }
 
 .cal-cell.selected {
-  background: var(--card-bg-hover);
-  box-shadow: inset 0 0 0 1px var(--card-border-hover);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
 }
 
 .cal-day-num {
-  font-size: 13px;
+  align-self: center;
+  font-size: 15px;
   font-weight: 500;
-  min-width: 26px;
-  height: 26px;
+  min-width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   border-radius: 999px;
@@ -914,28 +1032,66 @@ button {
   font-weight: 700;
 }
 
-.cal-dots {
+/* Task names inside day cells: up to three one-line entries in schedule
+   order, each truncated with an ellipsis so long titles never overlap; a
+   trailing "…" on the last shown name marks days holding more than three.
+   Small enough to fit the flat cells, big enough to read at the app's 125%
+   display scale. */
+.cal-items {
   display: flex;
-  gap: 3px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px;
+  overflow: hidden;
 }
 
-.cal-dot {
-  width: 5px;
-  height: 5px;
+.cal-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+/* Type marker: a 4px dot in the task's type color, preceding the name. */
+.cal-item::before {
+  content: '';
+  width: 4px;
+  height: 4px;
   border-radius: 999px;
   background: var(--text-secondary);
+  flex-shrink: 0;
 }
 
-.cal-dot.alarm {
+.cal-item.alarm::before {
   background: var(--accent);
 }
 
-.cal-dot.important {
+.cal-item.important::before {
   background: var(--danger);
 }
 
-.cal-dot.notification {
+.cal-item.notification::before {
   background: var(--badge-amber);
+}
+
+.cal-item-name {
+  /* flex-basis 0 + min-width 0 let the span actually shrink below its text
+     width, which is what engages the ellipsis — without it the name is only
+     hard-clipped at the cell edge with no "…". */
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-item-more {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-weight: 600;
 }
 
 .cal-detail {
@@ -1282,7 +1438,7 @@ button {
 
 .danger-btn {
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-  border-radius: 999px;
+  border-radius: var(--card-radius);
   padding: 9px var(--space-md);
   font-weight: 600;
   font-size: 13px;
@@ -1308,14 +1464,16 @@ button {
 
 .palette {
   width: min(520px, calc(100vw - 32px));
-  background: #242424;
+  background: var(--surface-raised);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--card-border-hover);
   border-radius: var(--card-radius-lg);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: reminder-in 140ms ease;
+  animation: reminder-in 140ms var(--ease);
 }
 
 .palette-input {
@@ -1348,7 +1506,7 @@ button {
   gap: var(--space-sm);
   text-align: left;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: 4px;
   font-size: 13.5px;
 }
 
@@ -1395,17 +1553,19 @@ button {
   z-index: 90;
   min-width: 280px;
   max-width: 360px;
-  background: #242424;
+  background: var(--surface-raised);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--card-border-hover);
-  border-left: 3px solid var(--accent);
-  border-radius: 12px;
+  border-left: 2px solid var(--accent);
+  border-radius: var(--card-radius);
   padding: var(--card-padding-sm);
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-md);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  animation: reminder-in 200ms ease;
+  animation: reminder-in 200ms var(--ease);
 }
 
 .reminder-icon {
