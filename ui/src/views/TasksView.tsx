@@ -3,14 +3,15 @@ import { request } from '../bridge/client';
 import type { TaskItem } from '../bridge/protocol';
 import { Icon } from '../components/Icon';
 import type { TaskModalState } from '../components/TaskModal';
-import { isPast, isToday, isUpcoming, taskDateTime, whenLabel } from '../lib/tasks';
+import { isToday, isUpcoming, taskDateTime, taskState, whenLabel } from '../lib/tasks';
 
 /**
- * The Tasks view: TODAY / UPCOMING / EARLIER lists with search, per-card actions
- * (complete, edit, duplicate, delete with confirmation), the create/edit modal
- * (app-level, opened via openModal), the accent FAB, and Ctrl+N. A port of the
- * WinForms Tasks screen — identical semantics, every mutation routed through
- * the IPC bridge.
+ * The Tasks view: the active/upcoming worklist (TODAY / UPCOMING) with search,
+ * per-card actions (complete, edit, duplicate, delete with confirmation), the
+ * create/edit modal (app-level, opened via openModal), the accent FAB, and
+ * Ctrl+N. Terminal tasks (fired → Completed, missed → Expired) live in the
+ * History view instead — completing a task moves it out of this worklist.
+ * Every mutation is routed through the IPC bridge.
  */
 export function TasksView({
   tasks,
@@ -52,9 +53,12 @@ export function TasksView({
     });
   }, [tasks, search]);
 
-  const today = filtered.filter((t) => isToday(t, now));
-  const upcoming = filtered.filter((t) => isUpcoming(t, now));
-  const earlier = filtered.filter((t) => isPast(t, now));
+  // The active worklist: only tasks still awaiting their fire time. Terminal
+  // tasks (Completed / Triggered / Expired) are the History view's domain —
+  // Expired must never sit here looking like a pending alarm.
+  const active = filtered.filter((t) => taskState(t) === 'Scheduled');
+  const today = active.filter((t) => isToday(t, now));
+  const upcoming = active.filter((t) => isUpcoming(t, now));
 
   const call = (fn: () => Promise<unknown>) => {
     void fn().catch(() => {});
@@ -105,16 +109,6 @@ export function TasksView({
       <TaskSection
         label="UPCOMING"
         tasks={upcoming}
-        now={now}
-        menuFor={menuFor}
-        setMenuFor={setMenuFor}
-        confirmBeforeDelete={confirmBeforeDelete}
-        onEdit={(task) => openModal({ mode: 'edit', task })}
-        call={call}
-      />
-      <TaskSection
-        label="EARLIER"
-        tasks={earlier}
         now={now}
         menuFor={menuFor}
         setMenuFor={setMenuFor}

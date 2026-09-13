@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { isHostAvailable, request, subscribe } from '../bridge/client';
-import type { AppSettings, AccentOption, InitialState, TaskItem } from '../bridge/protocol';
+import type { AppSettings, AccentOption, InitialState, NoteItem, TaskItem } from '../bridge/protocol';
 
 /**
  * The single React-side state holder: hydrated once from the host's appReady
@@ -15,6 +15,7 @@ export interface BridgeState {
   now: Date;
   tasks: TaskItem[];
   nextUp: TaskItem | null;
+  notes: NoteItem[];
   settings: AppSettings | null;
   accents: AccentOption[];
   startupEnabled: boolean;
@@ -28,6 +29,7 @@ const initial: BridgeState = {
   now: new Date(),
   tasks: [],
   nextUp: null,
+  notes: [],
   settings: null,
   accents: [],
   startupEnabled: false,
@@ -51,6 +53,7 @@ export function useBridgeState(): BridgeState {
         now: new Date(snapshot.now),
         tasks: snapshot.tasks,
         nextUp: snapshot.nextUp,
+        notes: snapshot.notes,
         settings: snapshot.settings,
         accents: snapshot.accents,
         startupEnabled: snapshot.startupEnabled,
@@ -68,6 +71,9 @@ export function useBridgeState(): BridgeState {
       }),
       subscribe('tasksChanged', (tasks: TaskItem[]) => {
         setState((prev) => ({ ...prev, tasks }));
+      }),
+      subscribe('notesChanged', (notes: NoteItem[]) => {
+        setState((prev) => ({ ...prev, notes }));
       }),
       subscribe('nextUpChanged', ({ task }: { task: TaskItem | null }) => {
         setState((prev) => ({ ...prev, nextUp: task }));

@@ -31,8 +31,11 @@ namespace VibeAlarm.Services
     public static class ToastSchedulePlanner
     {
 
-        public static ScheduledToastPlan Plan(IEnumerable<TaskItem> tasks, DateTime now, IEnumerable<ToastKey> currentlyScheduled)
+        /// <param name="timeZone">Wall-clock rules used to resolve DST-gap schedule times
+        /// (see <see cref="AlarmEngine.ResolveDstGap"/>); defaults to the local zone.</param>
+        public static ScheduledToastPlan Plan(IEnumerable<TaskItem> tasks, DateTime now, IEnumerable<ToastKey> currentlyScheduled, TimeZoneInfo? timeZone = null)
         {
+            TimeZoneInfo zone = timeZone ?? TimeZoneInfo.Local;
             var desired = new Dictionary<ToastKey, ToastAdd>();
             foreach (TaskItem task in tasks)
             {
@@ -48,7 +51,9 @@ namespace VibeAlarm.Services
                     continue;
                 }
 
-                DateTime fire = trigger.Value;
+                // Same DST-gap resolution as the in-app scheduler, so both surfaces fire at
+                // the same (valid) instant.
+                DateTime fire = AlarmEngine.ResolveDstGap(trigger.Value, zone);
                 if (fire <= now)
                 {
                     // Due (in the fire window) or past — the running app owns firing it;
@@ -70,7 +75,9 @@ namespace VibeAlarm.Services
         /// which changes the tag — the diff then removes the old toast and adds the new.</summary>
         public static string OccurrenceTag(DateTime fireTime) => fireTime.ToString("yyyyMMddHHmm");
 
-        private static string BuildBody(TaskItem task, DateTime fire) =>
+        /// <summary>The toast body text — shared by scheduled toasts and the fire-time
+        /// toast the host posts when an alarm fires, so both surfaces read identically.</summary>
+        public static string BuildBody(TaskItem task, DateTime fire) =>
             $"{task.Type} · {fire:ddd, MMM d} · {fire:hh:mm tt}";
     }
 }

@@ -444,6 +444,236 @@ button {
   display: block;
 }
 
+/* ---- History view ---- */
+
+/* A terminal task row. Same card chrome as .task-card, but the left slot is
+   the outcome glyph (check vs. struck bell) and the right slot an outcome
+   pill — both fixed semantic colors, never the accent. */
+.history-entry {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: var(--card-padding);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  transition: background 120ms ease, border-color 120ms ease;
+  position: relative;
+}
+
+.history-entry:hover {
+  background: var(--card-bg-hover);
+  border-color: var(--card-border-hover);
+}
+
+.history-status {
+  flex-shrink: 0;
+  margin-right: 6px; /* same lead-in as .task-check */
+  display: flex;
+  color: var(--badge-violet);
+}
+
+.history-entry.missed .history-status {
+  color: var(--badge-amber);
+}
+
+.history-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.history-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-entry.missed .history-title {
+  /* Missed tasks never ran — no strike-through; the amber pill carries the
+     "didn't fire" signal. */
+  color: var(--text-primary);
+}
+
+.history-entry:not(.missed) .history-title {
+  text-decoration: line-through;
+}
+
+/* Outcome pill — fixed amber (missed) / violet (completed), like the Dashboard
+   stat tiles, so meaning never shifts with the accent. */
+.history-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.history-badge.done {
+  color: var(--badge-violet);
+  background: color-mix(in srgb, var(--badge-violet) 16%, transparent);
+}
+
+.history-badge.missed {
+  color: var(--badge-amber);
+  background: color-mix(in srgb, var(--badge-amber) 16%, transparent);
+}
+
+.history-summary {
+  margin: 0;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* ---- Notes view ---- */
+
+/* Master-detail fills the viewport: the title list and the note body each
+   scroll on their own, so the toolbar and title row never move. height: 100%
+   (NOT 100vh — the root 125% zoom makes vh units disagree with the real
+   content box) fills .content exactly, so its scrollbar never engages. */
+.notes-view {
+  height: 100%;
+}
+
+.notes-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.notes-layout {
+  flex: 1;
+  min-height: 0; /* let the two panes own the overflow, not the grid */
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: var(--space-lg);
+}
+
+.notes-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: 2px; /* a hair of inset so the active border never clips */
+}
+
+.notes-item {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--card-radius);
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.notes-item:hover {
+  background: var(--card-bg-hover);
+}
+
+/* The open note: same selected treatment as the Settings accent row —
+   2px accent border + ~12% accent tint. */
+.notes-item.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.notes-item-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-item-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.notes-editor {
+  min-height: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* the head stays put; only the body scrolls */
+}
+
+.notes-editor-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--card-padding);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.notes-title-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.notes-title-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.notes-status {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Unsaved edits read as amber (the "pending" semantic), saved stays quiet. */
+.notes-status[data-status='dirty'] {
+  color: var(--badge-amber);
+}
+
+/* The note body: no fixed height, no resize handle — it fills the pane and
+   scrolls internally like a normal text editor, however long the note grows. */
+.notes-content {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.65;
+  padding: var(--card-padding);
+}
+
+.notes-content::placeholder {
+  color: var(--text-secondary);
+}
+
 /* Card actions + context menu */
 
 .task-card-actions {

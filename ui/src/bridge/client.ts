@@ -5,6 +5,7 @@ import type {
   IpcRequest,
   IpcResponse,
   NextUpChangedPush,
+  NoteItem,
   PushType,
   RequestMap,
   TaskItem,
@@ -115,4 +116,5 @@ type PushPayload<TType extends PushType> =
   : TType extends 'reminderFired' ? TaskItem
   : TType extends 'ambientChanged' ? AmbientChangedPush
   : TType extends 'settingsChanged' ? AppSettings
+  : TType extends 'notesChanged' ? NoteItem[]
   : never;

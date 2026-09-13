@@ -36,6 +36,22 @@ function parseTime(value: string): { hours: number; minutes: number } | null {
   return { hours, minutes };
 }
 
+/** The lifecycle states a task can be in (mirrors the host's TaskState enum). */
+export type TaskStateName = 'Scheduled' | 'Due' | 'Triggered' | 'Completed' | 'Expired';
+
+const TERMINAL_STATES: readonly TaskStateName[] = ['Triggered', 'Completed', 'Expired'];
+
+/**
+ * The task's effective lifecycle state, mirroring the host's TaskItem.GetState():
+ * an absent/blank persisted state (old records predating the State field) maps
+ * through the legacy completed flag.
+ */
+export function taskState(task: TaskItem): TaskStateName {
+  const raw = (task.state || '').toLowerCase();
+  const parsed = TERMINAL_STATES.find((s) => s.toLowerCase() === raw);
+  return parsed ?? (task.completed ? 'Completed' : 'Scheduled');
+}
+
 /** "Today", "Tomorrow", or "Fri, Sep 25" for the task's date. */
 export function whenDayLabel(task: TaskItem, today: Date): string {
   const date = taskDateTime(task);

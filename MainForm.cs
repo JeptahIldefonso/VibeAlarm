@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -243,22 +244,18 @@ namespace VibeAlarm
                 return;
             }
 
-            // The React overlay becomes the answer surface: the OS toast for this task
-            // disappears the instant the in-app alarm fires.
+            // The OS toast is no longer suppressed at fire time: the occurrence's
+            // still-scheduled toast is removed (so it can't double-announce) and an
+            // identical one is posted immediately — the alarm is announced on the
+            // Windows notification surface at the actual fire moment, alongside the
+            // in-app overlay + sound.
             toastScheduler.RemoveGroup(task.Id);
+            if (settings.EnableNotifications)
+            {
+                toastScheduler.ShowNow(task.Id, task.Title, ToastSchedulePlanner.BuildBody(task, clock.Now));
+            }
 
-            // Restore the window so the in-app alarm overlay is visible even when the app
-            // was hidden to the tray or minimized to the taskbar.
-            if (tray is { IsHidden: true })
-            {
-                Show();
-                tray.MarkVisible();
-            }
-            if (tray is { IsHidden: true } || WindowState == FormWindowState.Minimized)
-            {
-                WindowState = FormWindowState.Normal;
-                Activate();
-            }
+            ForceForeground();
 
             if (settings.EnableAlarmSound)
             {
@@ -305,6 +302,12 @@ namespace VibeAlarm
                 return;
             }
 
+            // Same as the alarm path: replace the occurrence's scheduled toast with an
+            // immediate one at the actual fire moment.
+            toastScheduler.RemoveGroup(task.Id);
+            toastScheduler.ShowNow(task.Id, task.Title, ToastSchedulePlanner.BuildBody(task, clock.Now));
+
+            ForceForeground();
             System.Media.SystemSounds.Asterisk.Play();
             if (bridge.ReactReady)
             {
@@ -321,11 +324,98 @@ namespace VibeAlarm
             }
         }
 
+        // ---- Force-foreground (the "queue popped" jump) ----
+
+        // Windows only lets a process call SetForegroundWindow successfully when it
+        // already owns the foreground (or meets narrow criteria); from the background
+        // the call silently fails and the taskbar button just flashes. The classic
+        // workaround: attach our input queue to the current foreground thread's —
+        // that makes this process part of the foreground input context for the
+        // duration of the call, so the focus steal is permitted.
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        /// <summary>
+        /// Brings the window to the true foreground on every fire — including when it
+        /// is hidden to the tray, minimized, or merely open behind other apps (plain
+        /// <see cref="Form.Activate"/> covers only the first two). Best-effort: no
+        /// failure here may ever break the alarm itself.
+        /// </summary>
+        private void ForceForeground()
+        {
+            // Un-hide from the tray / restore from minimized so there is a visible,
+            // normal-state window to bring forward. Capture the hidden state BEFORE
+            // MarkVisible() clears it.
+            bool wasHidden = tray is { IsHidden: true };
+            if (tray is { IsHidden: true } hidden)
+            {
+                Show();
+                hidden.MarkVisible();
+            }
+            if (wasHidden || WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+
+            try
+            {
+                IntPtr foregroundWindow = GetForegroundWindow();
+                uint foregroundThread = GetWindowThreadProcessId(foregroundWindow, out _);
+                uint thisThread = GetCurrentThreadId();
+                if (foregroundThread != 0 && foregroundThread != thisThread)
+                {
+                    AttachThreadInput(thisThread, foregroundThread, true);
+                    try
+                    {
+                        SetForegroundWindow(Handle);
+                    }
+                    finally
+                    {
+                        AttachThreadInput(thisThread, foregroundThread, false);
+                    }
+                }
+                else
+                {
+                    SetForegroundWindow(Handle);
+                }
+
+                // Belt and braces: if the input-queue trick was still denied (e.g. an
+                // elevated foreground window), a momentary topmost toggle forces the
+                // z-order change regardless.
+                if (GetForegroundWindow() != Handle)
+                {
+                    TopMost = true;
+                    TopMost = false;
+                }
+            }
+            catch
+            {
+                // Never let a foreground trick break the alarm itself.
+            }
+
+            Activate();
+        }
+
         // ---- Tray + close-to-tray ----
 
         private void InitializeTray()
         {
             tray = new TrayService(System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath));
+            // The icon is present for the whole app lifetime (Discord-style), not
+            // only while hidden — the user can always reach Open/Exit from the tray.
+            tray.ShowTray();
             tray.OpenRequested += () =>
             {
                 Show();

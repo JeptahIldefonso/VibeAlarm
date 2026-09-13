@@ -26,6 +26,9 @@ namespace VibeAlarm.Services
         /// <summary>tasks.json location.</summary>
         public static string TasksPath { get; } = Path.Combine(DataRoot, "tasks.json");
 
+        /// <summary>Notes — one plain .txt per note (see NoteStorageService).</summary>
+        public static string NotesDir { get; } = Path.Combine(DataRoot, "Notes");
+
         /// <summary>Runtime-generated audio (the synthesized brown-noise/rain WAVs).
         /// Regenerated on demand, so this is a cache, not precious data.</summary>
         public static string AssetsCacheDir { get; } = Path.Combine(DataRoot, "Assets");
@@ -35,6 +38,7 @@ namespace VibeAlarm.Services
             try
             {
                 Directory.CreateDirectory(DataRoot);
+                Directory.CreateDirectory(NotesDir);
                 Directory.CreateDirectory(AssetsCacheDir);
                 MigrateLegacyData(AppContext.BaseDirectory, DataRoot);
             }

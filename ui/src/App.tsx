@@ -8,16 +8,20 @@ import { TaskModal, type TaskModalState } from './components/TaskModal';
 import { AmbientView, useAmbientVolume } from './views/AmbientView';
 import { CalendarView } from './views/CalendarView';
 import { DashboardView } from './views/DashboardView';
+import { HistoryView } from './views/HistoryView';
+import { NotesView } from './views/NotesView';
 import { SettingsView } from './views/SettingsView';
 import { TasksView } from './views/TasksView';
 
-const VIEWS = ['Dashboard', 'Tasks', 'Calendar', 'Ambient', 'Settings'] as const;
+const VIEWS = ['Dashboard', 'Tasks', 'Calendar', 'History', 'Notes', 'Ambient', 'Settings'] as const;
 type ViewName = (typeof VIEWS)[number];
 
 const VIEW_ICONS: Record<ViewName, IconName> = {
   Dashboard: 'siren',
   Tasks: 'clipboard-list',
   Calendar: 'calendar-days',
+  History: 'history',
+  Notes: 'sticky-note',
   Ambient: 'audio-lines',
   Settings: 'sliders-horizontal',
 };
@@ -150,6 +154,20 @@ export default function App() {
         )}
         {activeView === 'Calendar' && (
           <CalendarView tasks={state.tasks} now={state.now} settings={state.settings} openModal={openModal} />
+        )}
+        {activeView === 'History' && (
+          <HistoryView
+            tasks={state.tasks}
+            now={state.now}
+            confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+            openModal={openModal}
+          />
+        )}
+        {activeView === 'Notes' && (
+          <NotesView
+            notes={state.notes}
+            confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+          />
         )}
         {activeView === 'Ambient' && (
           <AmbientView

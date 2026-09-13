@@ -183,6 +183,13 @@ namespace VibeAlarm.Services
                 {
                     throw new InvalidOperationException("Scheduled time must be in the future.");
                 }
+                // Re-scheduling a Missed (Expired) task revives it: without this,
+                // editing a missed task from History to a new future time would
+                // leave it Expired — dead in the archive, never to fire again.
+                if (rescheduled && task.GetState() == TaskState.Expired)
+                {
+                    task.SetState(TaskState.Scheduled);
+                }
                 scheduler.CheckTransitions(clock.Now);
                 scheduler.RecomputeNextUp(clock.Now);
                 Persist();
@@ -203,6 +210,49 @@ namespace VibeAlarm.Services
                 tasks.Clear();
                 scheduler.RecomputeNextUp(clock.Now);
                 Persist();
+                return null;
+            };
+
+            // ---- Notes (one .txt per note on disk; storage is the source of truth) ----
+
+            handlers["getNotes"] = _ => NoteStorageService.Load();
+
+            handlers["createNote"] = payload =>
+            {
+                var note = new NoteItem
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Title = GetString(payload, "title") ?? "Untitled",
+                    Content = GetString(payload, "content") ?? string.Empty,
+                    UpdatedAt = clock.Now,
+                };
+                NoteStorageService.Save(note);
+                Push("notesChanged", NoteStorageService.Load());
+                return note;
+            };
+
+            handlers["updateNote"] = payload =>
+            {
+                NoteItem note = FindNote(payload);
+                if (TryGetString(payload, "title", out string? title) && title != null)
+                {
+                    note.Title = title;
+                }
+                if (TryGetString(payload, "content", out string? content) && content != null)
+                {
+                    note.Content = content;
+                }
+                note.UpdatedAt = clock.Now;
+                NoteStorageService.Save(note);
+                Push("notesChanged", NoteStorageService.Load());
+                return note;
+            };
+
+            handlers["deleteNote"] = payload =>
+            {
+                NoteItem note = FindNote(payload);
+                NoteStorageService.Delete(note.Id);
+                Push("notesChanged", NoteStorageService.Load());
                 return null;
             };
 
@@ -320,6 +370,7 @@ namespace VibeAlarm.Services
             accents = AccentCatalog.Options.Select(AccentDto.From).ToArray(),
             startupEnabled = SettingsService.IsRunOnStartupEnabled(),
             ambient = new { playing = audio.IsAmbientPlaying, volume = audio.AmbientVolume, name = audio.ActiveAmbientName },
+            notes = NoteStorageService.Load(),
         };
 
         /// <summary>A leaner snapshot for on-demand refreshes.</summary>
@@ -328,6 +379,7 @@ namespace VibeAlarm.Services
             now = clock.Now,
             tasks,
             nextUp = scheduler.NextUp,
+            notes = NoteStorageService.Load(),
         };
 
         /// <summary>Settings served to React with the accent key resolved to a live
@@ -354,6 +406,13 @@ namespace VibeAlarm.Services
             string? id = GetString(payload, "id");
             TaskItem? task = tasks.FirstOrDefault(t => t.Id == id);
             return task ?? throw new InvalidOperationException("Task not found.");
+        }
+
+        private static NoteItem FindNote(JsonElement? payload)
+        {
+            string? id = GetString(payload, "id");
+            NoteItem? note = NoteStorageService.Load().FirstOrDefault(n => n.Id == id);
+            return note ?? throw new InvalidOperationException("Note not found.");
         }
 
         // ---- JsonElement payload helpers ----

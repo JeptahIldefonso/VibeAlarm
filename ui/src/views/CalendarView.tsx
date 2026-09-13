@@ -3,7 +3,7 @@ import { request } from '../bridge/client';
 import type { AppSettings, TaskItem } from '../bridge/protocol';
 import { Icon } from '../components/Icon';
 import type { TaskModalState } from '../components/TaskModal';
-import { formatTime, taskDateTime } from '../lib/tasks';
+import { formatTime, taskDateTime, taskState } from '../lib/tasks';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
@@ -54,6 +54,10 @@ export function CalendarView({
   const byDay = useMemo(() => {
     const map = new Map<string, TaskItem[]>();
     for (const task of tasks) {
+      // Active schedules only — fired (Completed) and missed (Expired) tasks drop
+      // out of the calendar the same way they drop out of the Tasks worklist;
+      // their record lives in the History view.
+      if (taskState(task) !== 'Scheduled') continue;
       const key = toKey(taskDateTime(task));
       if (key == null) continue;
       const list = map.get(key);

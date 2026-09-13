@@ -30,6 +30,15 @@ export interface TaskItem {
   state: string;
 }
 
+/** A note — one plain .txt file on disk (first line title, rest content).
+ *  `updatedAt` is the file's last-write time (ISO string). */
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+}
+
 /** settings.json record (AppSettings + the Appearance partial, flattened). */
 export interface AppSettings {
   schemaVersion: number;
@@ -70,6 +79,17 @@ export type AmbientCommand =
   | { op: 'stop' }
   | { op: 'volume'; volume: number };
 
+/** Input to createNote. The host assigns id; title defaults to "Untitled". */
+export interface NoteInput {
+  title?: string;
+  content?: string;
+}
+
+/** Partial update for updateNote — only present fields are applied. */
+export interface NoteUpdate extends Partial<NoteInput> {
+  id: string;
+}
+
 // ---- Push payloads ----
 
 export interface TimePush {
@@ -95,12 +115,14 @@ export interface InitialState {
   accents: AccentOption[];
   startupEnabled: boolean;
   ambient: { playing: boolean; volume: number; name: string | null };
+  notes: NoteItem[];
 }
 
 export interface StateSnapshot {
   now: string;
   tasks: TaskItem[];
   nextUp: TaskItem | null;
+  notes: NoteItem[];
 }
 
 // ---- Envelopes ----
@@ -133,7 +155,8 @@ export type PushType =
   | 'alarmFired'
   | 'reminderFired'
   | 'ambientChanged'
-  | 'settingsChanged';
+  | 'settingsChanged'
+  | 'notesChanged';
 
 /** Typed request catalogue: `request('createTask', input)` resolves to TaskItem. */
 export interface RequestMap {
@@ -155,6 +178,10 @@ export interface RequestMap {
   setAmbient: { payload: AmbientCommand; result: { ok?: boolean; volume?: number } };
   getAmbientSounds: { payload: void; result: AmbientSound[] };
   browseAmbientFile: { payload: void; result: AmbientSound | null };
+  getNotes: { payload: void; result: NoteItem[] };
+  createNote: { payload: NoteInput; result: NoteItem };
+  updateNote: { payload: NoteUpdate; result: NoteItem };
+  deleteNote: { payload: { id: string }; result: null };
 }
 
 /** A playable ambient track served by the host. */

@@ -18,8 +18,23 @@ namespace VibeAlarm.Services
     /// minutes later.
     ///
     /// Toast identity: Group = task Id, Tag = occurrence (fire minute) — see
-    /// <see cref="ToastKey"/>. The in-app alarm removes the task's whole group the
-    /// instant it fires (the overlay becomes the answer surface).
+    /// <see cref="ToastKey"/>. When the in-app alarm fires, the occurrence's
+    /// still-scheduled toast is removed (RemoveGroup) and replaced by an
+    /// immediate fire-time toast (<see cref="ShowNow"/>) — the user sees the OS
+    /// notification surface at the actual fire moment, alongside the in-app
+    /// overlay + sound.
+    ///
+    /// KNOWN BOUNDARY (documented, not fixable in-app): when the MACHINE itself is
+    /// asleep or hibernated at the scheduled moment, the in-app alarm cannot ring
+    /// during the sleep window — timers are frozen. This OS-scheduled toast is the
+    /// fallback for that case (and for the app being closed entirely). Whether the
+    /// toast can actually WAKE the machine is governed by Windows power settings
+    /// (Modern Standby / "allow wake timers") outside the app's control; on wake,
+    /// a missed scheduled toast surfaces at the next opportunity, and the running
+    /// app's resume catch-up (<see cref="TimeService.Pulse"/> stateless diff)
+    /// resolves any task whose time passed while asleep to Expired per the grace
+    /// rule. Do NOT try to "fix" this with wake-timer hacks — it is a power-policy
+    /// boundary, not an app bug.
     /// </summary>
     public sealed class ToastSchedulerService
     {
@@ -84,7 +99,8 @@ namespace VibeAlarm.Services
         }
 
         /// <summary>Removes every scheduled toast for one task — called the instant the
-        /// in-app alarm fires, so the OS toast and the React overlay never both appear.</summary>
+        /// in-app alarm fires, so the occurrence's future-scheduled toast doesn't
+        /// double-announce on top of the immediate one posted by <see cref="ShowNow"/>.</summary>
         public void RemoveGroup(string taskId)
         {
             try
@@ -99,6 +115,28 @@ namespace VibeAlarm.Services
             catch (Exception ex)
             {
                 Log("RemoveGroup failed: " + ex);
+            }
+        }
+
+        /// <summary>Posts a toast NOW — the fire-time surface for an alarm/reminder the
+        /// running app just triggered, instead of only the in-app overlay + sound. The
+        /// Snooze button routes through the same background-activation path as scheduled
+        /// toasts, so it works whether or not the window is in view.</summary>
+        public void ShowNow(string taskId, string title, string body)
+        {
+            try
+            {
+                new ToastContentBuilder()
+                    .AddText(title)
+                    .AddText(body)
+                    .AddButton(new ToastButton("Snooze 9 min",
+                        $"action=snooze&taskId={taskId}&minutes=9"))
+                    .AddButton(new ToastButtonDismiss())
+                    .Show();
+            }
+            catch (Exception ex)
+            {
+                Log("ShowNow failed: " + ex);
             }
         }
 

@@ -26,6 +26,7 @@ namespace VibeAlarm.Services
 
         private readonly IClock clock;
         private readonly List<TaskItem> tasks;
+        private readonly TimeZoneInfo timeZone;
 
         // Guard against duplicate in-session triggers regardless of minute alignment.
         private readonly HashSet<string> sessionFiredKeys = new(StringComparer.OrdinalIgnoreCase);
@@ -45,10 +46,13 @@ namespace VibeAlarm.Services
         /// <summary>Fired when the "next up" schedule (or its remaining time) changed.</summary>
         public event Action<TaskItem?, TimeSpan>? NextUpChanged;
 
-        public SchedulerService(IClock clock, List<TaskItem> taskList)
+        /// <param name="timeZone">Wall-clock rules used to resolve DST-gap schedule times
+        /// (see <see cref="AlarmEngine.ResolveDstGap"/>); defaults to the local zone.</param>
+        public SchedulerService(IClock clock, List<TaskItem> taskList, TimeZoneInfo? timeZone = null)
         {
             this.clock = clock;
             tasks = taskList;
+            this.timeZone = timeZone ?? TimeZoneInfo.Local;
         }
 
         public TimeSpan Countdown { get; private set; }
@@ -122,17 +126,14 @@ namespace VibeAlarm.Services
             RecomputeNextUp(now);
         }
 
+        /// <summary>Delegates to the single shared parse (<see cref="AlarmEngine"/>) and
+        /// resolves DST-gap times to the next valid instant. Never re-implement the
+        /// string parsing here — <see cref="AlarmEngine.GetScheduledDateTime"/> is the
+        /// one authority.</summary>
         private DateTime? GetScheduledTime(TaskItem task)
         {
-            if (!DateTime.TryParse(task.ScheduledDate, out DateTime date))
-            {
-                date = clock.Now.Date;
-            }
-            if (!DateTime.TryParse(task.RemindTime, out DateTime time))
-            {
-                return null;
-            }
-            return new DateTime(date.Year, date.Month, date.Day, time.Hour, time.Minute, 0);
+            DateTime? scheduled = AlarmEngine.GetScheduledDateTime(task);
+            return scheduled == null ? null : AlarmEngine.ResolveDstGap(scheduled.Value, timeZone);
         }
 
         private static string OccurrenceKey(TaskItem task, DateTime scheduledTime)
