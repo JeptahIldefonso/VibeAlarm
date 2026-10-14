@@ -26,6 +26,7 @@ const PATHS = {
       <path d="M4 2C2.8 3.7 2 5.7 2 8" />
     </>
   ),
+  bold: <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />,
   'calendar-check-2': (
     <>
       <path d="M 19 3 L 5 3" />
@@ -56,6 +57,8 @@ const PATHS = {
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,
+  'chevron-left': <path d="m15 18-6-6 6-6" />,
+  'chevron-right': <path d="m9 18 6-6-6-6" />,
   'circle-check': (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -104,11 +107,54 @@ const PATHS = {
       <path d="M21.92 13.267a10 10 0 1 0-8.653 8.653" />
     </>
   ),
+  download: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M12 15V3" />
+    </>
+  ),
+  'external-link': (
+    <>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </>
+  ),
   history: (
     <>
       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
       <path d="M3 3v5h5" />
       <path d="M12 7v5l4 2" />
+    </>
+  ),
+  'panel-left': (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+    </>
+  ),
+  italic: (
+    <>
+      <path d="M19 4h-9" />
+      <path d="M14 20H5" />
+      <path d="M15 4 9 20" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+    </>
+  ),
+  'redo-2': (
+    <>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
     </>
   ),
   'search-check': (
@@ -164,6 +210,14 @@ const PATHS = {
       <path d="M14 11v6" />
     </>
   ),
+  'undo-2': (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11" />
+    </>
+  ),
+  plus: <path d="M5 12h14M12 5v14" />,
+  x: <path d="M18 6 6 18M6 6l12 12" />,
 };
 
 export type IconName = keyof typeof PATHS;

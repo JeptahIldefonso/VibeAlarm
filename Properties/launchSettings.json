@@ -1,7 +1,16 @@
 {
   "profiles": {
-    "VibeAlarm": {
-      "commandName": "Project"
+    "VibeAlarm (Packaged UI)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "VIBEALARM_DEV_SERVER": ""
+      }
+    },
+    "VibeAlarm (Vite Hot Reload)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "VIBEALARM_DEV_SERVER": "http://localhost:5173"
+      }
     }
   }
 }

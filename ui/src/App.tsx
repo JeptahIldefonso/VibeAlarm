@@ -113,6 +113,22 @@ export default function App() {
     );
   }
 
+  const isDetached = new URLSearchParams(window.location.search).get('detached') === 'true';
+  const detachedNoteId = new URLSearchParams(window.location.search).get('id');
+
+  if (isDetached) {
+    return (
+      <div className="detached-app">
+        <NotesView
+          notes={state.notes}
+          confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+          initialSelectedId={detachedNoteId}
+          isDetached={true}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <nav className="sidebar">
@@ -140,7 +156,7 @@ export default function App() {
         </div>
       </nav>
 
-      <main className="content">
+      <main className={activeView === 'Notes' ? 'content content-notes' : 'content'}>
         {activeView === 'Dashboard' && (
           <DashboardView tasks={state.tasks} now={state.now} nextUp={state.nextUp} />
         )}

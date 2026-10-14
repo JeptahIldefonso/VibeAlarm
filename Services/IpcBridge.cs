@@ -26,7 +26,8 @@ namespace VibeAlarm.Services
         private readonly AudioService audio;
         private readonly ThemeService theme;
 
-        private CoreWebView2? core;
+        private readonly List<CoreWebView2> activeCores = new();
+        private CoreWebView2? mainCore;
         private readonly Dictionary<string, Func<JsonElement?, object?>> handlers =
             new(StringComparer.Ordinal);
 
@@ -52,28 +53,68 @@ namespace VibeAlarm.Services
             RegisterHandlers();
         }
 
-        /// <summary>Connects the bridge to an initialized CoreWebView2. Call exactly once,
-        /// from CoreWebView2InitializationCompleted, before the first Navigate.</summary>
+        /// <summary>Connects the bridge to an initialized CoreWebView2. Supports multiple
+        /// concurrent windows (e.g. main app + detached notes).</summary>
         public void Attach(CoreWebView2 coreWebView)
         {
-            core = coreWebView;
-            core.WebMessageReceived += OnWebMessageReceived;
+            if (!activeCores.Contains(coreWebView))
+            {
+                activeCores.Add(coreWebView);
+                if (mainCore == null)
+                {
+                    mainCore = coreWebView;
+                }
+                coreWebView.WebMessageReceived += OnWebMessageReceived;
+            }
         }
 
-        /// <summary>Posts an unsolicited event to React: { kind: "push", type, payload }.</summary>
+        /// <summary>Detaches a closed window's CoreWebView2 from the bridge.</summary>
+        public void Detach(CoreWebView2 coreWebView)
+        {
+            if (activeCores.Remove(coreWebView))
+            {
+                try
+                {
+                    coreWebView.WebMessageReceived -= OnWebMessageReceived;
+                }
+                catch
+                {
+                    // Ignore if already disposed
+                }
+                if (mainCore == coreWebView)
+                {
+                    mainCore = activeCores.Count > 0 ? activeCores[0] : null;
+                }
+            }
+        }
+
+        /// <summary>Posts an unsolicited event to all attached React windows: { kind: "push", type, payload }.</summary>
         public void Push(string type, object? payload)
         {
-            if (core == null)
+            if (activeCores.Count == 0)
             {
                 return;
             }
-            core.PostWebMessageAsJson(JsonSerializer.Serialize(new IpcPush { Type = type, Payload = payload }, IpcJson.Options));
+            string json = JsonSerializer.Serialize(new IpcPush { Type = type, Payload = payload }, IpcJson.Options);
+            for (int i = activeCores.Count - 1; i >= 0; i--)
+            {
+                var c = activeCores[i];
+                try
+                {
+                    c.PostWebMessageAsJson(json);
+                }
+                catch
+                {
+                    activeCores.RemoveAt(i);
+                }
+            }
         }
 
         // ---- Transport ----
 
         private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            var senderCore = sender as CoreWebView2 ?? mainCore;
             IpcRequest? request;
             try
             {
@@ -104,15 +145,22 @@ namespace VibeAlarm.Services
             }
             catch (Exception ex)
             {
-                Post(IpcResponse.Failure(request.Id, ex.Message));
+                Post(senderCore, IpcResponse.Failure(request.Id, ex.Message));
                 return;
             }
-            Post(IpcResponse.Success(request.Id, result));
+            Post(senderCore, IpcResponse.Success(request.Id, result));
         }
 
-        private void Post(IpcResponse response)
+        private static void Post(CoreWebView2? target, IpcResponse response)
         {
-            core?.PostWebMessageAsJson(JsonSerializer.Serialize(response, IpcJson.Options));
+            try
+            {
+                target?.PostWebMessageAsJson(JsonSerializer.Serialize(response, IpcJson.Options));
+            }
+            catch
+            {
+                // Core might have closed
+            }
         }
 
         // ---- Handlers ----
@@ -254,6 +302,47 @@ namespace VibeAlarm.Services
                 NoteStorageService.Delete(note.Id);
                 Push("notesChanged", NoteStorageService.Load());
                 return null;
+            };
+
+            // Notepad-style "Save as…". The editor's buffer is already plain text
+            // carrying Markdown emphasis (**bold**, *italic*, "- " bullets), so the
+            // export is the buffer verbatim — it opens correctly in Notepad and can
+            // be pasted back in without losing its structure. The payload carries the
+            // live buffer rather than an id so unsaved edits are included.
+            handlers["exportNote"] = payload =>
+            {
+                string title = GetString(payload, "title") ?? "Untitled";
+                string content = GetString(payload, "content") ?? string.Empty;
+                using var dialog = new SaveFileDialog
+                {
+                    Title = "Save note as",
+                    Filter = "Text documents (*.txt)|*.txt|All files (*.*)",
+                    DefaultExt = "txt",
+                    AddExtension = true,
+                    FileName = $"{SafeFileName(title)}.txt",
+                };
+                IWin32Window? owner = Form.ActiveForm;
+                DialogResult result = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+                if (result != DialogResult.OK)
+                {
+                    return null;
+                }
+                File.WriteAllText(dialog.FileName, ToWindowsNewlines(content));
+                return new { path = dialog.FileName };
+            };
+
+            handlers["detachNote"] = payload =>
+            {
+                string? id = GetString(payload, "id");
+                if (string.IsNullOrEmpty(id))
+                {
+                    throw new InvalidOperationException("Note id is required.");
+                }
+                var note = NoteStorageService.Load().FirstOrDefault(n => n.Id == id);
+                string title = note?.Title ?? "Note";
+                var form = new DetachedNoteForm(this, id, title);
+                form.Show();
+                return new { ok = true };
             };
 
             handlers["toggleComplete"] = payload =>
@@ -414,6 +503,28 @@ namespace VibeAlarm.Services
             NoteItem? note = NoteStorageService.Load().FirstOrDefault(n => n.Id == id);
             return note ?? throw new InvalidOperationException("Note not found.");
         }
+
+        /// <summary>Turns a note title into a usable default file name for the Save-As
+        /// dialog — invalid characters collapse to "_", and a title that reduces to
+        /// nothing falls back to "Note".</summary>
+        private static string SafeFileName(string title)
+        {
+            string name = string.Join(
+                "_",
+                title.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))
+                .Trim()
+                .TrimEnd('.'); // Windows rejects a trailing dot
+            if (name.Length == 0)
+            {
+                name = "Note";
+            }
+            return name.Length > 120 ? name[..120] : name;
+        }
+
+        /// <summary>Normalizes the browser's "\n" buffer to CRLF so the exported file
+        /// is a well-formed Windows text file for every editor, not just Notepad.</summary>
+        private static string ToWindowsNewlines(string text) =>
+            text.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", "\r\n");
 
         // ---- JsonElement payload helpers ----
 

@@ -182,6 +182,11 @@ export interface RequestMap {
   createNote: { payload: NoteInput; result: NoteItem };
   updateNote: { payload: NoteUpdate; result: NoteItem };
   deleteNote: { payload: { id: string }; result: null };
+  /** Opens the host's Save-As dialog and writes the note as plain .txt.
+   *  Resolves to null when the user cancels. */
+  exportNote: { payload: { title: string; content: string }; result: { path: string } | null };
+  /** Opens the note in a standalone lightweight notepad window. */
+  detachNote: { payload: { id: string }; result: { ok: boolean } };
 }
 
 /** A playable ambient track served by the host. */

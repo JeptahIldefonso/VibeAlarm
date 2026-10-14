@@ -165,7 +165,7 @@ namespace VibeAlarm
 
         /// <summary>Quick TCP probe so a Debug launch without a running dev server
         /// falls back to the packaged UI instead of showing an error page.</summary>
-        private static bool CanReach(string url)
+        public static bool CanReach(string url)
         {
             try
             {

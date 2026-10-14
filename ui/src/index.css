@@ -216,6 +216,21 @@ button {
   padding: var(--space-lg) var(--space-xl);
 }
 
+.content-notes {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px;
+  overflow: hidden;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.content-notes .notepad-shell {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
 .view {
   max-width: 860px;
   margin: 0 auto;
@@ -624,71 +639,427 @@ button {
   color: var(--text-secondary);
 }
 
-.notes-editor {
+/* Windows 11 Notepad Tabbed Interface */
+
+.notepad-shell {
+  flex: 1;
   min-height: 0;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--card-radius-lg);
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* the head stays put; only the body scrolls */
+  background: #202020;
+  border-radius: var(--card-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
-.notes-editor-head {
-  flex-shrink: 0;
+/* 1. Tab Bar */
+.notepad-tabbar {
+  height: 38px;
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--card-padding);
-  border-bottom: 1px solid var(--card-border);
+  padding: 0 6px;
+  gap: 4px;
+  flex-shrink: 0;
+  user-select: none;
 }
 
-.notes-title-input {
+.notepad-tabs-scroll-wrapper {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.notepad-tabs-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+  padding: 2px 0;
+}
+
+.notepad-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.notepad-tab {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  border: 1px solid transparent;
+  max-width: 170px;
+  min-width: 80px;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.notepad-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e4e4e7;
+}
+
+.notepad-tab.active {
+  background: #2b2b2b;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  font-weight: 500;
+}
+
+.notepad-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.notepad-tab-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.notepad-tab-close {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  color: #71717a;
+  padding: 0;
   background: transparent;
   border: none;
-  outline: none;
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.notes-title-input::placeholder {
-  color: var(--text-secondary);
-}
-
-.notes-status {
+  cursor: pointer;
   flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.notepad-tab:hover .notepad-tab-close {
+  opacity: 1;
+}
+
+.notepad-tab-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.notepad-tab-rename-input {
+  background: #181818;
+  border: 1px solid var(--accent);
+  color: #ffffff;
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  outline: none;
+  width: 100%;
+}
+
+.notepad-tab-scroll-btn {
+  width: 20px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  color: #71717a;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.notepad-tab-scroll-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.notepad-add-tab-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 2px;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.notepad-add-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* 2. Menu & Formatting Bar */
+.notepad-menubar {
+  height: 36px;
+  background: #252526;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.notepad-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.notepad-menu-btn {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.notepad-menu-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.notepad-menu-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.notepad-menu-btn.text-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.notepad-format-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.notepad-format-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.notepad-format-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.notepad-format-btn.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.notepad-format-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.notepad-vdivider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 6px;
+}
+
+.notepad-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.notepad-quick-title {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #e4e4e7;
+  font-size: 12px;
+  padding: 3px 8px;
+  width: 150px;
+  outline: none;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.notepad-quick-title:focus {
+  border-color: var(--accent);
+  background: #1e1e1e;
+}
+
+.notepad-status-tag {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-secondary);
+  color: #71717a;
 }
 
-/* Unsaved edits read as amber (the "pending" semantic), saved stays quiet. */
-.notes-status[data-status='dirty'] {
+.notepad-status-tag[data-status='dirty'] {
   color: var(--badge-amber);
 }
 
-/* The note body: no fixed height, no resize handle — it fills the pane and
-   scrolls internally like a normal text editor, however long the note grows. */
-.notes-content {
+/* 3. Editor Canvas */
+.notepad-editor-canvas {
   flex: 1;
   min-height: 0;
-  resize: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
+  overflow-y: auto;
+  background: #1c1c1c;
+  color: #d4d4d4;
   font-family: var(--font-body);
   font-size: 14px;
-  line-height: 1.65;
-  padding: var(--card-padding);
+  line-height: 1.6;
+  padding: 16px 20px;
+  outline: none;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.notes-content::placeholder {
-  color: var(--text-secondary);
+.notepad-editor-canvas:empty::before {
+  content: attr(data-placeholder);
+  color: #52525b;
+  pointer-events: none;
+}
+
+.notepad-editor-canvas ul {
+  margin: 4px 0;
+  padding-left: 24px;
+  list-style-type: disc;
+}
+
+.notepad-editor-canvas li {
+  margin: 2px 0;
+}
+
+.notepad-editor-canvas p,
+.notepad-editor-canvas div {
+  margin: 0;
+  min-height: 1.4em;
+}
+
+.notepad-editor-canvas strong,
+.notepad-editor-canvas b {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.notepad-editor-canvas em,
+.notepad-editor-canvas i {
+  font-style: italic;
+}
+
+/* 4. Windows Notepad Status Bar */
+.notepad-statusbar {
+  height: 26px;
+  background: #181818;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #71717a;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.notepad-status-left,
+.notepad-status-center,
+.notepad-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notepad-status-separator {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.notepad-status-indicator[data-status='dirty'] {
+  color: var(--badge-amber);
+}
+
+.notepad-status-indicator[data-status='saving'] {
+  color: var(--accent);
+}
+
+.notepad-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #71717a;
+}
+
+.notepad-empty-title {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* Standalone Notepad Mode */
+.detached-app {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #1c1c1c;
+  display: flex;
+  flex-direction: column;
+}
+
+.detached-notepad {
+  border: none !important;
+  border-radius: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* Card actions + context menu */
@@ -711,6 +1082,18 @@ button {
 .icon-btn:hover {
   color: var(--text-primary);
   background: rgba(0, 0, 0, 0.07);
+}
+
+/* Undo/redo with an empty stack: visibly inert, and no hover affordance that
+   would promise something the click won't do. */
+.icon-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  color: var(--text-secondary);
+  background: none;
 }
 
 .context-menu {
