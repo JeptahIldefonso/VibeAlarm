@@ -106,8 +106,3 @@ export function isUpcoming(task: TaskItem, today: Date): boolean {
   const date = taskDateTime(task);
   return date != null && startOfDay(date).getTime() > startOfDay(today).getTime();
 }
-
-export function isPast(task: TaskItem, today: Date): boolean {
-  const date = taskDateTime(task);
-  return date != null && startOfDay(date).getTime() < startOfDay(today).getTime();
-}
