@@ -445,13 +445,13 @@ namespace VibeAlarm
                         resumeMusicAfterAlarm = false;
                         musicPlayback.Resume();
                     }
-                    scheduler.Snooze(task, TimeSpan.FromMinutes(9), clock.Now);
+                    scheduler.Snooze(task, TimeSpan.FromMinutes(settings.SnoozeDurationMinutes), clock.Now);
                 });
 
             // Host starts alarm audio immediately without waiting for UI
             if (settings.EnableAlarmSound)
             {
-                audioService.PlayAlarmLoop(Path.Combine(AppContext.BaseDirectory, "Assets"));
+                audioService.PlayAlarmLoop(settings, Path.Combine(AppContext.BaseDirectory, "Assets"));
             }
 
             // Restore the window and lazy WebView2 if released
@@ -468,13 +468,13 @@ namespace VibeAlarm
                     if (settings.EnableNotifications)
                     {
                         DialogResult answer = MessageBox.Show(
-                            $"Alarm Triggered:\n\n\"{task.Title}\"\n\nSnooze for 9 minutes?",
+                            $"Alarm Triggered:\n\n\"{task.Title}\"\n\nSnooze for {settings.SnoozeDurationMinutes} minutes?",
                             "Alarm Alert",
                             MessageBoxButtons.YesNo,
                             MessageBoxIcon.Warning);
                         if (answer == DialogResult.Yes)
                         {
-                            scheduler.Snooze(task, TimeSpan.FromMinutes(9), clock.Now);
+                            scheduler.Snooze(task, TimeSpan.FromMinutes(settings.SnoozeDurationMinutes), clock.Now);
                         }
                     }
                 }

@@ -42,6 +42,9 @@ namespace VibeAlarm.Services
         /// <summary>toast-diagnostics.log location.</summary>
         public static string LogPath { get; } = Path.Combine(DataRoot, "toast-diagnostics.log");
 
+        /// <summary>Custom and built-in procedural alarm sounds (%LOCALAPPDATA%\VibeAlarm\Assets\AlarmSounds).</summary>
+        public static string AlarmSoundsDir { get; } = Path.Combine(AssetsCacheDir, "AlarmSounds");
+
         static AppPaths()
         {
             try
@@ -50,6 +53,7 @@ namespace VibeAlarm.Services
                 Directory.CreateDirectory(NotesDir);
                 Directory.CreateDirectory(AssetsCacheDir);
                 Directory.CreateDirectory(ArtCacheDir);
+                Directory.CreateDirectory(AlarmSoundsDir);
                 MigrateLegacyData(AppContext.BaseDirectory, DataRoot);
             }
             catch (Exception ex)

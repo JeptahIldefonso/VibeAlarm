@@ -374,7 +374,7 @@ namespace VibeAlarm.Services
             handlers["snoozeTask"] = payload =>
             {
                 TaskItem task = FindTask(payload);
-                int minutes = GetInt(payload, "minutes") ?? 9;
+                int minutes = GetInt(payload, "minutes") ?? SettingsService.Load().SnoozeDurationMinutes;
                 scheduler.Snooze(task, TimeSpan.FromMinutes(minutes), clock.Now); // raises StateChanged → persist + push
                 AlarmAnswered?.Invoke();
                 return task;
@@ -384,6 +384,79 @@ namespace VibeAlarm.Services
             {
                 AlarmAnswered?.Invoke();
                 return null;
+            };
+
+            handlers["previewAlarmSound"] = payload =>
+            {
+                string sound = GetString(payload, "sound") ?? "Default";
+                string? customPath = GetString(payload, "customPath");
+                int volume = GetInt(payload, "volume") ?? 80;
+                bool success = audio.PlayAlarmPreview(sound, customPath, volume, Path.Combine(AppContext.BaseDirectory, "Assets"));
+                return new { success };
+            };
+
+            handlers["stopAlarmPreview"] = _ =>
+            {
+                audio.StopAlarmPreview();
+                return new { ok = true };
+            };
+
+            handlers["selectCustomAlarmSound"] = _ =>
+            {
+                using var dialog = new OpenFileDialog
+                {
+                    Title = "Select Custom Alarm Sound",
+                    Filter = "Audio files (*.mp3;*.wav;*.m4a;*.flac)|*.mp3;*.wav;*.m4a;*.flac|All files (*.*)|*.*",
+                };
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    var result = CustomAlarmSoundService.ValidateAndImport(dialog.FileName, AppPaths.AlarmSoundsDir);
+                    if (!result.Success)
+                    {
+                        return new { success = false, error = result.ErrorMessage };
+                    }
+
+                    var currentSettings = SettingsService.Load();
+                    currentSettings.AlarmSound = "Custom";
+                    currentSettings.CustomAlarmSoundPath = result.SoundPath;
+                    currentSettings.CustomAlarmSoundName = result.SoundName;
+                    SettingsService.Save(currentSettings);
+                    Push("settingsChanged", currentSettings);
+                    return new { success = true, soundPath = result.SoundPath, soundName = result.SoundName };
+                }
+                return new { success = false, canceled = true };
+            };
+
+            handlers["resetAlarmSettings"] = _ =>
+            {
+                var current = SettingsService.Load();
+                current.AlarmSound = "Default";
+                current.CustomAlarmSoundPath = null;
+                current.CustomAlarmSoundName = null;
+                current.AlarmVolume = 80;
+                current.AlarmDurationMinutes = 5;
+                current.SnoozeDurationMinutes = 9;
+                current.GradualVolumeIncrease = false;
+                SettingsService.Save(current);
+                Push("settingsChanged", current);
+                return current;
+            };
+
+            handlers["testAlarm"] = _ =>
+            {
+                var testTask = new TaskItem
+                {
+                    Id = "test_alarm_" + Guid.NewGuid().ToString("N")[..8],
+                    Title = "Test Alarm",
+                    ScheduledDate = clock.Now.ToString("yyyy-MM-dd"),
+                    RemindTime = clock.Now.ToString("hh:mm tt"),
+                    Type = SchedulerService.TaskTypeAlarm,
+                    Completed = false
+                };
+                var settings = SettingsService.Load();
+                audio.PlayAlarmLoop(settings, Path.Combine(AppContext.BaseDirectory, "Assets"));
+                Push("alarmFired", testTask);
+                return new { ok = true };
             };
 
             handlers["getSettings"] = _ => SettingsForClient();
@@ -406,6 +479,9 @@ namespace VibeAlarm.Services
                 }
                 settings.SchemaVersion = SettingsService.Load().SchemaVersion; // host owns schema versioning
                 settings.AccentColor = AccentCatalog.Resolve(settings.AccentColor).Key; // normalize legacy keys
+                settings.AlarmVolume = Math.Clamp(settings.AlarmVolume, 10, 100);
+                settings.SnoozeDurationMinutes = Math.Clamp(settings.SnoozeDurationMinutes, 1, 60);
+                settings.AlarmDurationMinutes = Math.Max(0, settings.AlarmDurationMinutes);
                 SettingsService.Save(settings);
                 if (SettingsService.IsRunOnStartupEnabled())
                 {

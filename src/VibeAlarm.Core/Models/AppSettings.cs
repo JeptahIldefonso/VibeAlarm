@@ -53,5 +53,26 @@ namespace VibeAlarm.Models
 
         /// <summary>Persisted list of music folder paths added to the library.</summary>
         public List<string> MusicFolders { get; set; } = new();
+
+        /// <summary>Active alarm sound identifier: "Default", "Classic Beep", "Soft Chime", "Digital Pulse", "Rising Tone", or "Custom".</summary>
+        public string AlarmSound { get; set; } = "Default";
+
+        /// <summary>Relative file name of the custom alarm sound in Assets\AlarmSounds, if AlarmSound == "Custom".</summary>
+        public string? CustomAlarmSoundPath { get; set; }
+
+        /// <summary>Display name of the custom alarm sound.</summary>
+        public string? CustomAlarmSoundName { get; set; }
+
+        /// <summary>Alarm playback volume (10-100), separate from ambient and music volume.</summary>
+        public int AlarmVolume { get; set; } = 80;
+
+        /// <summary>Minutes the alarm rings before stopping automatically (0 = ring until dismissed).</summary>
+        public int AlarmDurationMinutes { get; set; } = 5;
+
+        /// <summary>Snooze duration in minutes (e.g. 5, 9, 10, 15).</summary>
+        public int SnoozeDurationMinutes { get; set; } = 9;
+
+        /// <summary>Gradually ramp up the alarm volume over 30 seconds.</summary>
+        public bool GradualVolumeIncrease { get; set; } = false;
     }
 }

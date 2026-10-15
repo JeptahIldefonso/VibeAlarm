@@ -17,6 +17,7 @@ namespace VibeAlarm.Services
         private string? activeAmbientAlias;
         private string? activeAmbientName;
         private SoundPlayer? activeAlarmPlayer;
+        private readonly AlarmAudioPlayer alarmAudioPlayer = new();
 
         /// <summary>Fired whenever the currently-playing ambient track changes (null when stopped).</summary>
         public event Action<string?>? AmbientPlayingChanged;
@@ -82,27 +83,45 @@ namespace VibeAlarm.Services
             AmbientPlayingChanged?.Invoke(null);
         }
 
-        /// <summary>
-        /// Plays the built-in alarm.wav in a loop. Falls back to the system beep when the file is missing.
-        /// </summary>
-        public void PlayAlarmLoop(string assetsDirectory)
-        {
-            string audioPath = Path.Combine(assetsDirectory, "alarm.wav");
-            if (!File.Exists(audioPath))
-            {
-                SystemSounds.Beep.Play();
-                return;
-            }
+        /// <summary>Whether an alarm is currently ringing.</summary>
+        public bool IsAlarmPlaying => alarmAudioPlayer.IsPlaying;
 
-            StopAlarmLoop();
-            activeAlarmPlayer = new SoundPlayer(audioPath);
-            activeAlarmPlayer.Load();
-            activeAlarmPlayer.PlayLooping();
+        /// <summary>Whether an alarm preview is currently playing.</summary>
+        public bool IsAlarmPreviewing => alarmAudioPlayer.IsPreviewing;
+
+        /// <summary>
+        /// Plays alarm audio using the reliability fallback chain (chosen sound -> default sound -> system beep).
+        /// </summary>
+        public AlarmFallbackLevel PlayAlarmLoop(string assetsDirectory)
+        {
+            return PlayAlarmLoop(SettingsService.Load(), assetsDirectory);
+        }
+
+        /// <summary>
+        /// Plays alarm audio with user settings using the reliability fallback chain.
+        /// </summary>
+        public AlarmFallbackLevel PlayAlarmLoop(VibeAlarm.Models.AppSettings settings, string defaultAssetsDir)
+        {
+            StopAmbientAudio();
+            return alarmAudioPlayer.PlayAlarm(settings, defaultAssetsDir);
+        }
+
+        /// <summary>Plays a non-blocking preview of an alarm sound.</summary>
+        public bool PlayAlarmPreview(string soundType, string? customPath, int volume, string defaultAssetsDir)
+        {
+            return alarmAudioPlayer.PlayPreview(soundType, customPath, volume, defaultAssetsDir);
+        }
+
+        /// <summary>Stops an active alarm preview.</summary>
+        public void StopAlarmPreview()
+        {
+            alarmAudioPlayer.StopPreview();
         }
 
         /// <summary>Stops the looping alarm audio.</summary>
         public void StopAlarmLoop()
         {
+            alarmAudioPlayer.Stop();
             activeAlarmPlayer?.Stop();
             activeAlarmPlayer?.Dispose();
             activeAlarmPlayer = null;
@@ -195,6 +214,10 @@ namespace VibeAlarm.Services
             }
         }
 
-        public void Dispose() => StopAmbientAudio();
+        public void Dispose()
+        {
+            StopAmbientAudio();
+            alarmAudioPlayer.Dispose();
+        }
     }
 }

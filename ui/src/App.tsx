@@ -279,7 +279,7 @@ export default function App() {
         onOpenTask={(task) => openModal({ mode: 'edit', task })}
       />
 
-      <AlarmLayer now={state.now} />
+      <AlarmLayer now={state.now} snoozeMinutes={state.settings?.snoozeDurationMinutes ?? 9} />
     </div>
   );
 }

@@ -52,6 +52,13 @@ export interface AppSettings {
   enableAlarmSound: boolean;
   confirmBeforeDelete: boolean;
   musicFolders?: string[];
+  alarmSound?: string;
+  customAlarmSoundPath?: string | null;
+  customAlarmSoundName?: string | null;
+  alarmVolume?: number;
+  alarmDurationMinutes?: number;
+  snoozeDurationMinutes?: number;
+  gradualVolumeIncrease?: boolean;
 }
 
 /** A single track in the music library with TagLibSharp-extracted metadata. */
@@ -314,6 +321,27 @@ export interface RequestMap {
       shuffle?: boolean;
       repeatMode?: 'off' | 'all' | 'one';
     };
+  };
+  // ---- Alarm Settings (Phase D) ----
+  previewAlarmSound: {
+    payload: { sound: string; customPath?: string | null; volume: number };
+    result: { success: boolean };
+  };
+  stopAlarmPreview: {
+    payload: void;
+    result: { ok: boolean };
+  };
+  selectCustomAlarmSound: {
+    payload: void;
+    result: { success: boolean; soundPath?: string; soundName?: string; error?: string; canceled?: boolean };
+  };
+  resetAlarmSettings: {
+    payload: void;
+    result: AppSettings;
+  };
+  testAlarm: {
+    payload: void;
+    result: { ok: boolean };
   };
 }
 

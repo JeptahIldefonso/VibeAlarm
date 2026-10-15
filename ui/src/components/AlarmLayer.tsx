@@ -10,7 +10,7 @@ import { whenLabel } from '../lib/tasks';
  * OS toast the instant this appears, so exactly one surface asks the question.
  * Also renders the transient reminder toasts.
  */
-export function AlarmLayer({ now }: { now: Date }) {
+export function AlarmLayer({ now, snoozeMinutes = 9 }: { now: Date; snoozeMinutes?: number }) {
   const [alarm, setAlarm] = useState<TaskItem | null>(null);
   const [reminders, setReminders] = useState<{ task: TaskItem; id: number }[]>([]);
 
@@ -48,11 +48,11 @@ export function AlarmLayer({ now }: { now: Date }) {
                 type="button"
                 className="btn-primary"
                 onClick={() => {
-                  request('snoozeTask', { id: alarm.id, minutes: 9 }).catch(() => {});
+                  request('snoozeTask', { id: alarm.id, minutes: snoozeMinutes }).catch(() => {});
                   setAlarm(null);
                 }}
               >
-                Snooze 9 min
+                Snooze {snoozeMinutes} min
               </button>
               <button
                 type="button"

@@ -52,6 +52,53 @@ export function SettingsView({
     }
   };
 
+  const [previewing, setPreviewing] = useState(false);
+  const [customFileError, setCustomFileError] = useState<string | null>(null);
+
+  const togglePreview = async () => {
+    if (previewing) {
+      await request('stopAlarmPreview');
+      setPreviewing(false);
+    } else {
+      const res = await request('previewAlarmSound', {
+        sound: settings.alarmSound ?? 'Default',
+        customPath: settings.customAlarmSoundPath,
+        volume: settings.alarmVolume ?? 80,
+      });
+      if (res.success) {
+        setPreviewing(true);
+        window.setTimeout(() => setPreviewing(false), 5100);
+      }
+    }
+  };
+
+  const triggerTestAlarm = async () => {
+    await request('testAlarm');
+  };
+
+  const chooseCustomFile = async () => {
+    setCustomFileError(null);
+    try {
+      const res = await request('selectCustomAlarmSound');
+      if (res.error) {
+        setCustomFileError(res.error);
+      }
+    } catch (err: unknown) {
+      setCustomFileError(err instanceof Error ? err.message : 'Failed to choose file');
+    }
+  };
+
+  const resetAlarmSettings = async () => {
+    setSaving(true);
+    setPreviewing(false);
+    setCustomFileError(null);
+    try {
+      await request('resetAlarmSettings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteAll = async () => {
     if (!window.confirm('Delete ALL tasks permanently? This cannot be undone.')) return;
     try {
@@ -134,6 +181,168 @@ export function SettingsView({
               onChange={(v) => patch({ startWithWindowsHidden: v })}
             />
           )}
+        </div>
+      </section>
+
+      <section aria-label="Alarm settings">
+        <div className="settings-header-row">
+          <h3 className="section-label" style={{ margin: 0 }}>ALARM</h3>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ fontSize: '12px', padding: '4px 10px' }}
+            disabled={saving}
+            onClick={resetAlarmSettings}
+          >
+            Reset to default
+          </button>
+        </div>
+        <div className="settings-card">
+          <div className="settings-row">
+            <span className="toggle-text">
+              <span className="toggle-label">Alarm sound</span>
+              <span className="toggle-hint">
+                {settings.alarmSound === 'Custom'
+                  ? 'Custom sound file (copied safely to app data; Windows default chime if closed).'
+                  : 'Choose a synthesized tone or the classic alarm sound.'}
+              </span>
+              {settings.alarmSound === 'Custom' && (
+                <div className="alarm-sound-custom-box">
+                  <span className="alarm-sound-file-tag">
+                    {settings.customAlarmSoundName || 'No file chosen'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ fontSize: '11.5px', padding: '3px 8px' }}
+                    disabled={saving}
+                    onClick={chooseCustomFile}
+                  >
+                    Choose file…
+                  </button>
+                </div>
+              )}
+              {customFileError && (
+                <span style={{ fontSize: '11.5px', color: 'var(--danger, #ff5555)', marginTop: '4px' }}>
+                  {customFileError}
+                </span>
+              )}
+            </span>
+            <div className="alarm-btn-group">
+              <select
+                className="settings-select"
+                value={settings.alarmSound ?? 'Default'}
+                disabled={saving}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === 'Custom' && !settings.customAlarmSoundPath) {
+                    patch({ alarmSound: 'Custom' });
+                    chooseCustomFile();
+                  } else {
+                    patch({ alarmSound: val });
+                  }
+                }}
+              >
+                <option value="Default">Default (Classic)</option>
+                <option value="Classic Beep">Classic Beep</option>
+                <option value="Soft Chime">Soft Chime</option>
+                <option value="Digital Pulse">Digital Pulse</option>
+                <option value="Rising Tone">Rising Tone</option>
+                <option value="Custom">Custom file…</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="settings-row">
+            <span className="toggle-text">
+              <span className="toggle-label">Test & Preview</span>
+              <span className="toggle-hint">Audition chosen sound or simulate an incoming alarm alert.</span>
+            </span>
+            <div className="alarm-btn-group">
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ fontSize: '12px', padding: '5px 10px' }}
+                disabled={saving}
+                onClick={togglePreview}
+              >
+                {previewing ? 'Stop preview' : 'Preview sound'}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ fontSize: '12px', padding: '5px 10px' }}
+                disabled={saving}
+                onClick={triggerTestAlarm}
+              >
+                Test alarm
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-row">
+            <span className="toggle-text">
+              <span className="toggle-label">Alarm volume</span>
+              <span className="toggle-hint">Dedicated alarm level (minimum 10% to prevent accidental silence).</span>
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="range"
+                className="alarm-volume-slider"
+                min={10}
+                max={100}
+                value={settings.alarmVolume ?? 80}
+                disabled={saving}
+                onChange={(e) => patch({ alarmVolume: Number(e.target.value) })}
+              />
+              <span className="alarm-volume-val">{settings.alarmVolume ?? 80}%</span>
+            </div>
+          </div>
+
+          <ToggleRow
+            label="Gradual volume increase"
+            hint="Gently ramp up alarm volume over 30 seconds."
+            checked={settings.gradualVolumeIncrease ?? false}
+            disabled={saving}
+            onChange={(v) => patch({ gradualVolumeIncrease: v })}
+          />
+
+          <div className="settings-row">
+            <span className="toggle-text">
+              <span className="toggle-label">Ring duration</span>
+              <span className="toggle-hint">How long the alarm rings before stopping automatically.</span>
+            </span>
+            <select
+              className="settings-select"
+              value={settings.alarmDurationMinutes ?? 5}
+              disabled={saving}
+              onChange={(e) => patch({ alarmDurationMinutes: Number(e.target.value) })}
+            >
+              <option value={1}>1 minute</option>
+              <option value={2}>2 minutes</option>
+              <option value={5}>5 minutes (default)</option>
+              <option value={10}>10 minutes</option>
+              <option value={0}>Ring until dismissed</option>
+            </select>
+          </div>
+
+          <div className="settings-row">
+            <span className="toggle-text">
+              <span className="toggle-label">Snooze length</span>
+              <span className="toggle-hint">Minutes added when clicking Snooze on an alarm.</span>
+            </span>
+            <select
+              className="settings-select"
+              value={settings.snoozeDurationMinutes ?? 9}
+              disabled={saving}
+              onChange={(e) => patch({ snoozeDurationMinutes: Number(e.target.value) })}
+            >
+              <option value={5}>5 minutes</option>
+              <option value={9}>9 minutes (default)</option>
+              <option value={10}>10 minutes</option>
+              <option value={15}>15 minutes</option>
+            </select>
+          </div>
         </div>
       </section>
 
