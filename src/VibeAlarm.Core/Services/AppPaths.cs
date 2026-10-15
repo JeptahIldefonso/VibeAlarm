@@ -39,6 +39,9 @@ namespace VibeAlarm.Services
         /// <summary>Album artwork thumbnail cache (%LOCALAPPDATA%\VibeAlarm\Art).</summary>
         public static string ArtCacheDir { get; } = Path.Combine(DataRoot, "Art");
 
+        /// <summary>toast-diagnostics.log location.</summary>
+        public static string LogPath { get; } = Path.Combine(DataRoot, "toast-diagnostics.log");
+
         static AppPaths()
         {
             try

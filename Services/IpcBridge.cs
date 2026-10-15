@@ -99,6 +99,10 @@ namespace VibeAlarm.Services
                 {
                     mainCore = activeCores.Count > 0 ? activeCores[0] : null;
                 }
+                if (activeCores.Count == 0)
+                {
+                    ReactReady = false;
+                }
             }
         }
 
@@ -403,6 +407,10 @@ namespace VibeAlarm.Services
                 settings.SchemaVersion = SettingsService.Load().SchemaVersion; // host owns schema versioning
                 settings.AccentColor = AccentCatalog.Resolve(settings.AccentColor).Key; // normalize legacy keys
                 SettingsService.Save(settings);
+                if (SettingsService.IsRunOnStartupEnabled())
+                {
+                    SettingsService.SetRunOnStartup(true, settings.StartWithWindowsHidden);
+                }
                 theme.ApplyAccent(settings.AccentColor); // keep the host palette state in sync
                 Push("settingsChanged", settings);
                 return settings;
@@ -415,7 +423,8 @@ namespace VibeAlarm.Services
 
             handlers["setStartupEnabled"] = payload =>
             {
-                SettingsService.SetRunOnStartup(GetBool(payload, "enabled"));
+                var cur = SettingsService.Load();
+                SettingsService.SetRunOnStartup(GetBool(payload, "enabled"), cur.StartWithWindowsHidden);
                 return SettingsService.IsRunOnStartupEnabled();
             };
 
@@ -639,10 +648,14 @@ namespace VibeAlarm.Services
                 return new { ok = true };
             };
 
-            handlers["getMusicLibrary"] = _ => new
+            handlers["getMusicLibrary"] = _ =>
             {
-                folders = musicLibrary.Folders,
-                tracks = musicLibrary.Tracks
+                musicLibrary.StartArtPassIfNeeded();
+                return new
+                {
+                    folders = musicLibrary.Folders,
+                    tracks = musicLibrary.Tracks
+                };
             };
         }
 

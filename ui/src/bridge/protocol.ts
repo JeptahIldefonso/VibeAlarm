@@ -44,6 +44,8 @@ export interface AppSettings {
   schemaVersion: number;
   accentColor: string;
   minimizeToTray: boolean;
+  startWithWindowsHidden?: boolean;
+  missedAlarmGracePeriodMinutes?: number;
   lastActiveView: string;
   lastViewedCalendarMonth: string;
   enableNotifications: boolean;

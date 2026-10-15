@@ -113,7 +113,7 @@ export function SettingsView({
           />
           <ToggleRow
             label="Minimize to tray on close"
-            hint="The close button hides to the tray instead of exiting."
+            hint="The close button hides to the tray instead of exiting (alarms continue to ring)."
             checked={settings.minimizeToTray}
             disabled={saving}
             onChange={(v) => patch({ minimizeToTray: v })}
@@ -125,6 +125,15 @@ export function SettingsView({
             disabled={saving}
             onChange={toggleStartup}
           />
+          {startup && (
+            <ToggleRow
+              label="Start with Windows, hidden"
+              hint="Launch minimized in the system tray when Windows boots."
+              checked={settings.startWithWindowsHidden ?? true}
+              disabled={saving}
+              onChange={(v) => patch({ startWithWindowsHidden: v })}
+            />
+          )}
         </div>
       </section>
 

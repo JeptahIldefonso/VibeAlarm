@@ -567,5 +567,122 @@ namespace VibeAlarm.Tests
             Assert.Equal(TaskState.Scheduled, later.GetState());
             Assert.Equal(new DateTime(2026, 9, 2, 12, 0, 0), AlarmEngine.GetScheduledDateTime(later));
         }
+
+        // ---- Phase C: Power, Battery & Grace Period Tests ----
+
+        [Fact]
+        public void Resume_within_grace_period_rings_normally()
+        {
+            var scheduledTime = new DateTime(2026, 9, 2, 10, 0, 0);
+            var nowAtResume = new DateTime(2026, 9, 2, 10, 5, 0); // 5 minutes late (within 10-min grace)
+            var clock = new FakeClock(scheduledTime);
+            var task = Task("Morning Alarm", scheduledTime, Alarm);
+            var list = new List<TaskItem> { task };
+            var scheduler = new SchedulerService(clock, list) { GracePeriodMinutes = 10 };
+
+            TaskItem? firedAlarm = null;
+            TaskItem? missedAlarm = null;
+            scheduler.AlarmFired += t => firedAlarm = t;
+            scheduler.MissedAlarm += (t, _) => missedAlarm = t;
+
+            clock.Set(nowAtResume);
+            bool changed = scheduler.HandleResumeOrTimeChange(clock.Now, 10);
+
+            Assert.True(changed);
+            Assert.NotNull(firedAlarm);
+            Assert.Equal("Morning Alarm", firedAlarm!.Title);
+            Assert.Null(missedAlarm);
+            Assert.Equal(TaskState.Completed, task.GetState());
+        }
+
+        [Fact]
+        public void Resume_beyond_grace_period_raises_missed_alarm_and_retires_to_expired()
+        {
+            var scheduledTime = new DateTime(2026, 9, 2, 10, 0, 0);
+            var nowAtResume = new DateTime(2026, 9, 2, 12, 30, 0); // 2.5 hours late (beyond 10-min grace)
+            var clock = new FakeClock(scheduledTime);
+            var task = Task("Overslept Alarm", scheduledTime, Alarm);
+            var list = new List<TaskItem> { task };
+            var scheduler = new SchedulerService(clock, list) { GracePeriodMinutes = 10 };
+
+            TaskItem? firedAlarm = null;
+            TaskItem? missedAlarm = null;
+            DateTime? missedTime = null;
+            scheduler.AlarmFired += t => firedAlarm = t;
+            scheduler.MissedAlarm += (t, st) => { missedAlarm = t; missedTime = st; };
+
+            clock.Set(nowAtResume);
+            bool changed = scheduler.HandleResumeOrTimeChange(clock.Now, 10);
+
+            Assert.True(changed);
+            Assert.Null(firedAlarm); // Never rings hours late!
+            Assert.NotNull(missedAlarm);
+            Assert.Equal("Overslept Alarm", missedAlarm!.Title);
+            Assert.Equal(scheduledTime, missedTime);
+            Assert.Equal(TaskState.Expired, task.GetState());
+        }
+
+        [Fact]
+        public void Resume_with_future_alarm_leaves_it_scheduled()
+        {
+            var scheduledTime = new DateTime(2026, 9, 2, 11, 0, 0);
+            var nowAtResume = new DateTime(2026, 9, 2, 10, 30, 0); // 30 minutes before
+            var clock = new FakeClock(nowAtResume);
+            var task = Task("Future Alarm", scheduledTime, Alarm);
+            var list = new List<TaskItem> { task };
+            var scheduler = new SchedulerService(clock, list) { GracePeriodMinutes = 10 };
+
+            TaskItem? firedAlarm = null;
+            TaskItem? missedAlarm = null;
+            scheduler.AlarmFired += t => firedAlarm = t;
+            scheduler.MissedAlarm += (t, _) => missedAlarm = t;
+
+            bool changed = scheduler.HandleResumeOrTimeChange(clock.Now, 10);
+
+            Assert.False(changed);
+            Assert.Null(firedAlarm);
+            Assert.Null(missedAlarm);
+            Assert.Equal(TaskState.Scheduled, task.GetState());
+            Assert.Equal("Future Alarm", scheduler.NextUp?.Title);
+        }
+
+        [Fact]
+        public void GetNextDueTime_returns_earliest_future_alarm_and_null_when_empty()
+        {
+            var now = new DateTime(2026, 9, 2, 10, 0, 0);
+            var clock = new FakeClock(now);
+            var schedulerEmpty = new SchedulerService(clock, new List<TaskItem>());
+            Assert.Null(schedulerEmpty.GetNextDueTime(now));
+
+            var t1 = Task("Soon", now.AddMinutes(15));
+            var t2 = Task("Later", now.AddHours(2));
+            var list = new List<TaskItem> { t2, t1 };
+            var scheduler = new SchedulerService(clock, list);
+
+            DateTime? next = scheduler.GetNextDueTime(now);
+            Assert.NotNull(next);
+            Assert.Equal(now.AddMinutes(15), next.Value);
+        }
+
+        [Fact]
+        public void CheckTransitions_beyond_grace_period_raises_missed_alarm()
+        {
+            var scheduledTime = new DateTime(2026, 9, 2, 10, 0, 0);
+            var clock = new FakeClock(scheduledTime);
+            var task = Task("Late Check", scheduledTime, Alarm);
+            var list = new List<TaskItem> { task };
+            var scheduler = new SchedulerService(clock, list) { GracePeriodMinutes = 10 };
+
+            TaskItem? missed = null;
+            scheduler.MissedAlarm += (t, _) => missed = t;
+
+            // Advance by 30 minutes (beyond 10m grace) without ringing
+            clock.Advance(TimeSpan.FromMinutes(30));
+            scheduler.CheckTransitions(clock.Now);
+
+            Assert.NotNull(missed);
+            Assert.Equal("Late Check", missed!.Title);
+            Assert.Equal(TaskState.Expired, task.GetState());
+        }
     }
 }

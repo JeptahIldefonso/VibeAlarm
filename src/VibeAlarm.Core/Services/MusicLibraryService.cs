@@ -73,8 +73,22 @@ namespace VibeAlarm.Services
 
             ArtService.ArtBatchReady += batch => ArtBatchReady?.Invoke(batch);
             ArtService.PersistIndexRequested += () => PersistLibrary();
+        }
 
-            // Run low-priority background pass for any tracks with un-checked artwork
+        private bool isArtPassStarted;
+
+        /// <summary>
+        /// Starts the background album art pass if not already started.
+        /// Called lazily when the Ambient/Music view is opened or playback starts,
+        /// avoiding background CPU/disk work when sitting silently in the tray.
+        /// </summary>
+        public void StartArtPassIfNeeded()
+        {
+            lock (syncLock)
+            {
+                if (isArtPassStarted) return;
+                isArtPassStarted = true;
+            }
             ArtService.StartBackgroundPass(Tracks.ToList());
         }
 

@@ -90,7 +90,7 @@ namespace VibeAlarm.Services
         }
 
         /// <summary>Adds or removes the Windows startup registration for the application.</summary>
-        public static void SetRunOnStartup(bool enable)
+        public static void SetRunOnStartup(bool enable, bool startHidden = false)
         {
             try
             {
@@ -105,7 +105,8 @@ namespace VibeAlarm.Services
                     // Environment.ProcessPath works for every UI head (and stays correct
                     // under dotnet run); BaseDirectory is the fallback for exotic hosts.
                     string exePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
-                    key.SetValue(AppName, $"\"{exePath}\"");
+                    string command = startHidden ? $"\"{exePath}\" --tray" : $"\"{exePath}\"";
+                    key.SetValue(AppName, command);
                 }
                 else
                 {

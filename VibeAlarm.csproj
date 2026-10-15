@@ -16,6 +16,8 @@
          here — the conflict is benign and suppressed. -->
     <!-- Suppress XML documentation files from packages (WebView2) in publish output -->
     <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 

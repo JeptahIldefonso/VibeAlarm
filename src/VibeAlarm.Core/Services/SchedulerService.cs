@@ -40,11 +40,18 @@ namespace VibeAlarm.Services
         /// <summary>Fired when an alarm-typed task reaches its scheduled time.</summary>
         public event Action<TaskItem>? AlarmFired;
 
+        /// <summary>Fired when an alarm was missed beyond the grace period (e.g. machine was asleep/off).</summary>
+        public event Action<TaskItem, DateTime>? MissedAlarm;
+
         /// <summary>Fired when one or more task states changed and persisted state was saved.</summary>
         public event Action? StateChanged;
 
         /// <summary>Fired when the "next up" schedule (or its remaining time) changed.</summary>
         public event Action<TaskItem?, TimeSpan>? NextUpChanged;
+
+        /// <summary>Grace period in minutes during which an alarm that passed will still ring normally.
+        /// Defaults to 10 minutes. If older than this window, it is retired to Expired and raises MissedAlarm.</summary>
+        public int GracePeriodMinutes { get; set; } = 10;
 
         /// <param name="timeZone">Wall-clock rules used to resolve DST-gap schedule times
         /// (see <see cref="AlarmEngine.ResolveDstGap"/>); defaults to the local zone.</param>
@@ -142,17 +149,23 @@ namespace VibeAlarm.Services
         private static DateTime TruncateToMinute(DateTime value)
             => new(value.Year, value.Month, value.Day, value.Hour, value.Minute, 0);
 
-        /// <summary>
-        /// True when the schedule is due to fire now: its scheduled minute is the current
-        /// minute, or the immediately-preceding minute (a one-minute grace so a schedule at
-        /// a minute boundary — e.g. a task at 23:59 evaluated just after midnight — is honored
-        /// rather than spuriously retired). Schedules older than that are simply missed.
-        /// </summary>
-        private static bool InFireWindow(DateTime scheduled, DateTime now)
+        private static bool InStartupWindow(DateTime scheduled, DateTime now)
         {
             DateTime s = TruncateToMinute(scheduled);
             DateTime n = TruncateToMinute(now);
             return s == n || s == n.AddMinutes(-1);
+        }
+
+        /// <summary>
+        /// True when the schedule is within the fire grace window.
+        /// </summary>
+        private bool InFireWindow(DateTime scheduled, DateTime now, int? graceMinutes = null)
+        {
+            DateTime s = TruncateToMinute(scheduled);
+            DateTime n = TruncateToMinute(now);
+            if (s > n) return false;
+            int grace = graceMinutes ?? GracePeriodMinutes;
+            return (n - s) <= TimeSpan.FromMinutes(grace);
         }
 
         /// <summary>
@@ -183,7 +196,7 @@ namespace VibeAlarm.Services
                     continue;
                 }
 
-                if (InFireWindow(scheduled.Value, now))
+                if (InStartupWindow(scheduled.Value, now))
                 {
                     // Just reached (or just passed within the grace minute): fire on the next pass.
                     task.SetState(TaskState.Due);
@@ -225,11 +238,12 @@ namespace VibeAlarm.Services
                     continue;
                 }
 
-                // Reached, but beyond the grace minute → missed, retire to history (never delete).
+                // Reached, but beyond the grace window → missed, retire to history (never delete).
                 if (!InFireWindow(scheduled.Value, now))
                 {
                     task.SetState(TaskState.Expired);
                     anyChanged = true;
+                    MissedAlarm?.Invoke(task, scheduled.Value);
                     continue;
                 }
 
@@ -251,6 +265,92 @@ namespace VibeAlarm.Services
                     {
                         ReminderFired?.Invoke(task);
                     }
+                }
+            }
+
+            if (anyChanged)
+            {
+                StateChanged?.Invoke();
+            }
+
+            RecomputeNextUp(now);
+            return anyChanged;
+        }
+
+        /// <summary>
+        /// Returns the earliest future scheduled DateTime among active tasks, or null if none.
+        /// Used by the single-timer alarm scheduler.
+        /// </summary>
+        public DateTime? GetNextDueTime(DateTime? referenceTime = null)
+        {
+            DateTime now = referenceTime ?? clock.Now;
+            var candidate = tasks
+                .Where(t => t.GetState() is TaskState.Scheduled or TaskState.Due)
+                .Select(t => new { Task = t, Time = GetScheduledTime(t) })
+                .Where(x => x.Time is DateTime s && s >= now)
+                .OrderBy(x => x.Time)
+                .FirstOrDefault();
+
+            return candidate?.Time;
+        }
+
+        /// <summary>
+        /// Recomputes task schedules after waking from sleep, system time change, or timezone change.
+        /// For alarms missed within the grace period (default 10 minutes), rings normally;
+        /// otherwise raises MissedAlarm and retires them to Expired (history). Never rings hours late.
+        /// </summary>
+        public bool HandleResumeOrTimeChange(DateTime now, int? gracePeriodMinutes = null)
+        {
+            int grace = gracePeriodMinutes ?? GracePeriodMinutes;
+            bool anyChanged = false;
+
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                TaskItem task = tasks[i];
+                TaskState state = task.GetState();
+
+                if (state is TaskState.Completed or TaskState.Triggered or TaskState.Expired)
+                {
+                    continue;
+                }
+
+                DateTime? scheduled = GetScheduledTime(task);
+                if (scheduled == null)
+                {
+                    continue;
+                }
+
+                if (scheduled.Value > now)
+                {
+                    task.SetState(TaskState.Scheduled);
+                    continue;
+                }
+
+                // scheduled.Value <= now
+                if (InFireWindow(scheduled.Value, now, grace))
+                {
+                    string key = OccurrenceKey(task, scheduled.Value);
+                    if (!sessionFiredKeys.Contains(key))
+                    {
+                        sessionFiredKeys.Add(key);
+                        task.SetState(TaskState.Completed);
+                        anyChanged = true;
+
+                        if (task.Type == TaskTypeAlarm)
+                        {
+                            AlarmFired?.Invoke(task);
+                        }
+                        else
+                        {
+                            ReminderFired?.Invoke(task);
+                        }
+                    }
+                }
+                else
+                {
+                    task.SetState(TaskState.Expired);
+                    anyChanged = true;
+                    MissedAlarm?.Invoke(task, scheduled.Value);
                 }
             }
 

@@ -21,7 +21,14 @@ namespace VibeAlarm.Models
         public string AccentColor { get; set; } = "Matrix Green";
 
         /// <summary>True to hide-to-tray (rather than exit) when the window's close button is used.</summary>
-        public bool MinimizeToTray { get; set; }
+        public bool MinimizeToTray { get; set; } = true;
+
+        /// <summary>Minutes an alarm can be missed while the computer was asleep/off and still ring normally.
+        /// If older than this threshold, it is logged to History as a Missed Alarm and never rings late.</summary>
+        public int MissedAlarmGracePeriodMinutes { get; set; } = 10;
+
+        /// <summary>When running at Windows startup, start minimized in the tray without opening the window.</summary>
+        public bool StartWithWindowsHidden { get; set; } = true;
 
         /// <summary>Last active navigation view name, so returning to the app doesn't reset nav.</summary>
         public string LastActiveView { get; set; } = "Tasks";

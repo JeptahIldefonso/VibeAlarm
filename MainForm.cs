@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using VibeAlarm.Models;
@@ -25,6 +30,7 @@ namespace VibeAlarm
     {
         private const string VirtualHost = "vibealarm.app";
         private const string ArtVirtualHost = "art.vibealarm.app";
+        private const int UiReleaseDelaySeconds = 60;
 
         private readonly IClock clock = new Clock();
         private readonly List<TaskItem> masterTaskList = new();
@@ -37,17 +43,24 @@ namespace VibeAlarm
         private readonly MusicPlaybackService musicPlayback;
         private readonly ToastSchedulerService toastScheduler;
 
+        private readonly bool startInTray;
+        private bool allowVisible;
         private TrayService? tray;
-        private WebView2 webView = null!;
+        private WebView2? webView;
         private IpcBridge bridge = null!;
-        private System.Windows.Forms.Timer backgroundAlarmTicker = null!;
+        private System.Threading.Timer? nextAlarmTimer;
+        private System.Windows.Forms.Timer? uiClockTimer;
+        private System.Threading.Timer? uiReleaseTimer;
         private System.Windows.Forms.Timer musicProgressTimer = null!;
         private string? lastPushedNextUpId;
+        private bool isInitialized;
         private bool userInitiatedExit;
         private bool resumeMusicAfterAlarm;
 
-        public MainForm()
+        public MainForm(bool startInTray = false)
         {
+            this.startInTray = startInTray;
+            this.allowVisible = !startInTray;
             // Load persisted state once, up front — same startup sequence as the WinForms
             // UI: settings → accent → default ambient assets → task list → scheduler.
             AppSettings restored = SettingsService.Load();
@@ -85,27 +98,31 @@ namespace VibeAlarm
             ClientSize = new Size(1600, 1000);
             MinimumSize = new Size(1200, 820);
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            // The SPA's ground is a light neutral gray; matching it on the host
-            // surface avoids a dark flash before WebView2 has painted anything.
-            BackColor = System.Drawing.Color.FromArgb(0xD0, 0xD0, 0xD0);
-
-            // The entire presentation layer: one WebView2 filling the window.
-            webView = new WebView2 { Dock = DockStyle.Fill };
-            Controls.Add(webView);
-            webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
-            _ = webView.EnsureCoreWebView2Async();
+            // The SPA's ground is dark (#141414); matching it on the host
+            // surface avoids a white/light flash before WebView2 has painted anything.
+            BackColor = System.Drawing.Color.FromArgb(0x14, 0x14, 0x14);
 
             bridge = new IpcBridge(clock, scheduler, masterTaskList, audioService, themeService, musicLibrary, musicPlayer, musicPlayback);
             bridge.AlarmAnswered += () =>
             {
                 audioService.StopAlarmLoop();
+                tray?.ClearAlarmRinging();
                 if (resumeMusicAfterAlarm)
                 {
                     resumeMusicAfterAlarm = false;
                     musicPlayback.Resume();
                 }
             };
-            bridge.Persisted += toastScheduler.Reconcile;
+            bridge.Persisted += () =>
+            {
+                toastScheduler.Reconcile();
+                ArmNextAlarmTimer();
+            };
+
+            if (!startInTray)
+            {
+                CreateAndInitializeWebView();
+            }
 
             InitializeServices();
             audioService.AmbientPlayingChanged += _ => bridge.Push(
@@ -225,6 +242,7 @@ namespace VibeAlarm
             // Startup reconciliation: whatever the task list says NOW is what Windows
             // should hold (adds missed schedules, removes stale ones).
             toastScheduler.Reconcile();
+            isInitialized = true;
         }
 
         /// <summary>Reloads tasks.json into the live list — called after a toast Snooze
@@ -241,12 +259,23 @@ namespace VibeAlarm
             scheduler.ReplaceTasks();
             bridge.Push("tasksChanged", masterTaskList);
             toastScheduler.Reconcile();
+            ArmNextAlarmTimer();
         }
 
         // ---- WebView2 hosting ----
 
+        private void CreateAndInitializeWebView()
+        {
+            if (webView != null) return;
+            webView = new WebView2 { Dock = DockStyle.Fill };
+            Controls.Add(webView);
+            webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
+            _ = webView.EnsureCoreWebView2Async();
+        }
+
         private void OnWebViewInitialized(object? sender, CoreWebView2InitializationCompletedEventArgs e)
         {
+            if (webView == null) return;
             if (!e.IsSuccess || webView.CoreWebView2 == null)
             {
                 // Surface the failure in-window rather than leaving a black void.
@@ -320,6 +349,7 @@ namespace VibeAlarm
             // startup race before React has completed its handshake.
             scheduler.AlarmFired += OnAlarmFired;
             scheduler.ReminderFired += OnReminderFired;
+            scheduler.MissedAlarm += OnMissedAlarm;
 
             // Any task transition: persist deterministically, hand React the new list,
             // and bring Windows' scheduled toasts in line with it.
@@ -328,6 +358,7 @@ namespace VibeAlarm
                 TaskStorageService.Save(masterTaskList);
                 bridge.Push("tasksChanged", masterTaskList);
                 toastScheduler.Reconcile();
+                ArmNextAlarmTimer();
             };
 
             // Next Up changes tell React which task leads and its remaining time; the
@@ -342,34 +373,29 @@ namespace VibeAlarm
                 }
             };
 
-            // A single 1-second timer drives the live clock. The TimeService turns each
-            // second into cheap per-second ticks plus rare minute/date/resume boundaries.
-            backgroundAlarmTicker = new System.Windows.Forms.Timer { Interval = 1000 };
-            backgroundAlarmTicker.Tick += (s, e) => timeService.Pulse();
-            backgroundAlarmTicker.Start();
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
+            SystemEvents.TimeChanged += OnTimeChanged;
 
-            // Per second: push the system time (re-read from the clock each tick — React
-            // never increments a local counter) and refresh the Next Up countdown.
-            timeService.SecondChanged += now =>
+            // Arm the single next-alarm timer and set initial tray tooltip
+            ArmNextAlarmTimer();
+
+            if (!startInTray)
             {
-                bridge.Push("time", new { now });
-                scheduler.RefreshCountdown(now);
+                StartUiClock();
+            }
+
+            this.Activated += (s, e) =>
+            {
+                timeService.OnResumed();
+                if (allowVisible && WindowState != FormWindowState.Minimized)
+                {
+                    StartUiClock();
+                }
             };
-
-            // Minute/resume boundary: evaluate task transitions.
-            timeService.MinuteChanged += now => scheduler.CheckTransitions(now);
-            timeService.Resumed += now => scheduler.CheckTransitions(now);
-            timeService.DateChanged += now => scheduler.CheckTransitions(now);
-
-            // Re-sync immediately whenever the app regains focus (timer may have been
-            // suspended while the window was hidden).
-            this.Activated += (s, e) => timeService.OnResumed();
         }
 
         private void OnAlarmFired(TaskItem task)
         {
-            // The toggles gate the alarm's *surfaces* (sound, notification) — never the
-            // scheduler itself.
             AppSettings settings = SettingsService.Load();
             if (!settings.EnableAlarmSound && !settings.EnableNotifications)
             {
@@ -389,32 +415,54 @@ namespace VibeAlarm
 
             // The OS toast is no longer suppressed at fire time: the occurrence's
             // still-scheduled toast is removed (so it can't double-announce) and an
-            // identical one is posted immediately — the alarm is announced on the
-            // Windows notification surface at the actual fire moment, alongside the
-            // in-app overlay + sound.
+            // identical one is posted immediately.
             toastScheduler.RemoveGroup(task.Id);
             if (settings.EnableNotifications)
             {
                 toastScheduler.ShowNow(task.Id, task.Title, ToastSchedulePlanner.BuildBody(task, clock.Now));
             }
 
-            ForceForeground();
+            // Add Dismiss and Snooze to tray menu while alarm rings so alarm can ALWAYS be stopped
+            // even if WebView2 is missing, released, or slow to load.
+            tray?.SetAlarmRinging(
+                task.Title,
+                onDismiss: () =>
+                {
+                    audioService.StopAlarmLoop();
+                    tray?.ClearAlarmRinging();
+                    if (resumeMusicAfterAlarm)
+                    {
+                        resumeMusicAfterAlarm = false;
+                        musicPlayback.Resume();
+                    }
+                },
+                onSnooze: () =>
+                {
+                    audioService.StopAlarmLoop();
+                    tray?.ClearAlarmRinging();
+                    if (resumeMusicAfterAlarm)
+                    {
+                        resumeMusicAfterAlarm = false;
+                        musicPlayback.Resume();
+                    }
+                    scheduler.Snooze(task, TimeSpan.FromMinutes(9), clock.Now);
+                });
 
+            // Host starts alarm audio immediately without waiting for UI
             if (settings.EnableAlarmSound)
             {
                 audioService.PlayAlarmLoop(Path.Combine(AppContext.BaseDirectory, "Assets"));
             }
 
+            // Restore the window and lazy WebView2 if released
+            RestoreFromTray();
+
             if (bridge.ReactReady)
             {
-                // The React overlay (Snooze 9 min / Dismiss) is the answer surface; the
-                // loop stops when it answers (dismissAlarm / snoozeTask → AlarmAnswered).
                 bridge.Push("alarmFired", task);
             }
             else
             {
-                // Startup race or placeholder UI — the legacy prompt, identical to the
-                // WinForms-era behavior.
                 try
                 {
                     if (settings.EnableNotifications)
@@ -433,6 +481,7 @@ namespace VibeAlarm
                 finally
                 {
                     audioService.StopAlarmLoop();
+                    tray?.ClearAlarmRinging();
                     if (resumeMusicAfterAlarm)
                     {
                         resumeMusicAfterAlarm = false;
@@ -450,12 +499,10 @@ namespace VibeAlarm
                 return;
             }
 
-            // Same as the alarm path: replace the occurrence's scheduled toast with an
-            // immediate one at the actual fire moment.
             toastScheduler.RemoveGroup(task.Id);
             toastScheduler.ShowNow(task.Id, task.Title, ToastSchedulePlanner.BuildBody(task, clock.Now));
 
-            ForceForeground();
+            RestoreFromTray();
             System.Media.SystemSounds.Asterisk.Play();
             if (bridge.ReactReady)
             {
@@ -472,14 +519,316 @@ namespace VibeAlarm
             }
         }
 
+        private void OnMissedAlarm(TaskItem task, DateTime scheduled)
+        {
+            toastScheduler.ShowNow(task.Id, "Missed Alarm", $"\"{task.Title}\" was scheduled for {scheduled:t} while the computer was asleep or off.");
+            if (tray is { IsHidden: true })
+            {
+                tray.ShowToast("Missed Alarm", $"\"{task.Title}\" was scheduled for {scheduled:t}.", ToolTipIcon.Warning);
+            }
+        }
+
+        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume)
+            {
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        var settings = SettingsService.Load();
+                        scheduler.HandleResumeOrTimeChange(clock.Now, settings.MissedAlarmGracePeriodMinutes);
+                        ArmNextAlarmTimer();
+                        if (allowVisible && WindowState != FormWindowState.Minimized)
+                        {
+                            StartUiClock();
+                        }
+                    }));
+                }
+                catch { }
+            }
+        }
+
+        private void OnTimeChanged(object? sender, EventArgs e)
+        {
+            try
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    var settings = SettingsService.Load();
+                    scheduler.HandleResumeOrTimeChange(clock.Now, settings.MissedAlarmGracePeriodMinutes);
+                    ArmNextAlarmTimer();
+                    if (allowVisible && WindowState != FormWindowState.Minimized)
+                    {
+                        StartUiClock();
+                    }
+                }));
+            }
+            catch { }
+        }
+
+        private void ArmNextAlarmTimer()
+        {
+            DateTime now = clock.Now;
+            DateTime? nextDue = scheduler.GetNextDueTime(now);
+            if (nextDue == null)
+            {
+                nextAlarmTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                tray?.UpdateTooltip(null);
+                return;
+            }
+
+            TimeSpan delay = nextDue.Value - now;
+            long delayMs = (long)Math.Max(0, delay.TotalMilliseconds);
+            if (delayMs > 86_400_000) delayMs = 86_400_000;
+
+            if (nextAlarmTimer == null)
+            {
+                nextAlarmTimer = new System.Threading.Timer(_ =>
+                {
+                    try
+                    {
+                        if (!IsDisposed && IsHandleCreated)
+                        {
+                            BeginInvoke(new Action(OnAlarmTimerTick));
+                        }
+                    }
+                    catch { }
+                }, null, delayMs, Timeout.Infinite);
+            }
+            else
+            {
+                nextAlarmTimer.Change(delayMs, Timeout.Infinite);
+            }
+
+            var nextTask = scheduler.NextUp;
+            if (nextTask != null)
+            {
+                tray?.UpdateTooltip($"{nextTask.Title} at {nextDue.Value:t}");
+            }
+        }
+
+        private void OnAlarmTimerTick()
+        {
+            scheduler.CheckTransitions(clock.Now);
+            ArmNextAlarmTimer();
+        }
+
+        private void StartUiClock()
+        {
+            StopUiClock();
+            if (!isInitialized || bridge == null)
+            {
+                return;
+            }
+            if (tray is { IsHidden: true } || WindowState == FormWindowState.Minimized)
+            {
+                return;
+            }
+
+            bridge.Push("time", new { now = clock.Now });
+            scheduler.RefreshCountdown(clock.Now);
+
+            DateTime now = clock.Now;
+            int msToNextMinute = (60 - now.Second) * 1000 - now.Millisecond;
+            if (msToNextMinute <= 50) msToNextMinute = 60000;
+
+            uiClockTimer = new System.Windows.Forms.Timer { Interval = msToNextMinute };
+            uiClockTimer.Tick += OnUiClockTick;
+            uiClockTimer.Start();
+        }
+
+        private void OnUiClockTick(object? sender, EventArgs e)
+        {
+            if (uiClockTimer == null) return;
+            uiClockTimer.Stop();
+
+            if (!isInitialized || bridge == null || tray is { IsHidden: true } || WindowState == FormWindowState.Minimized)
+            {
+                return;
+            }
+
+            bridge.Push("time", new { now = clock.Now });
+            scheduler.RefreshCountdown(clock.Now);
+
+            DateTime now = clock.Now;
+            int msToNextMinute = (60 - now.Second) * 1000 - now.Millisecond;
+            if (msToNextMinute <= 50) msToNextMinute = 60000;
+            uiClockTimer.Interval = msToNextMinute;
+            uiClockTimer.Start();
+        }
+
+        private void StopUiClock()
+        {
+            if (uiClockTimer != null)
+            {
+                uiClockTimer.Stop();
+                uiClockTimer.Dispose();
+                uiClockTimer = null;
+            }
+        }
+
+        public void HideToTray()
+        {
+            Hide();
+            tray?.MarkHidden();
+            StopUiClock();
+            if (musicProgressTimer.Enabled)
+            {
+                musicProgressTimer.Stop();
+            }
+            UpdateProcessEfficiency(isHidden: true, isAudioPlaying: musicPlayback.IsPlaying || audioService.IsAmbientPlaying);
+
+            uiReleaseTimer?.Dispose();
+            uiReleaseTimer = new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                    {
+                        BeginInvoke(new Action(ReleaseWebView));
+                    }
+                }
+                catch { }
+            }, null, UiReleaseDelaySeconds * 1000, Timeout.Infinite);
+        }
+
+        private void ReleaseWebView()
+        {
+            if (webView == null) return;
+
+            uint browserPid = 0;
+            try
+            {
+                browserPid = webView.CoreWebView2?.BrowserProcessId ?? 0;
+            }
+            catch { }
+
+            if (webView.CoreWebView2 != null)
+            {
+                bridge.Detach(webView.CoreWebView2);
+            }
+
+            Controls.Remove(webView);
+            webView.Dispose();
+            webView = null;
+
+            if (browserPid != 0)
+            {
+                try
+                {
+                    using var browserProcess = Process.GetProcessById((int)browserPid);
+                    browserProcess.Kill(entireProcessTree: true);
+                    browserProcess.WaitForExit(3000);
+                }
+                catch { }
+            }
+
+            GC.Collect(2, GCCollectionMode.Forced, true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, true);
+            try
+            {
+                EmptyWorkingSet(Process.GetCurrentProcess().Handle);
+            }
+            catch { }
+        }
+
+        public void RestoreFromTray()
+        {
+            allowVisible = true;
+            uiReleaseTimer?.Dispose();
+            uiReleaseTimer = null;
+
+            UpdateProcessEfficiency(isHidden: false, isAudioPlaying: true);
+
+            if (webView == null)
+            {
+                CreateAndInitializeWebView();
+            }
+
+            Show();
+            tray?.MarkVisible();
+            WindowState = FormWindowState.Normal;
+            ForceForeground();
+            StartUiClock();
+
+            if (musicPlayback.IsPlaying)
+            {
+                musicProgressTimer.Start();
+            }
+        }
+
+        protected override void SetVisibleCore(bool value)
+        {
+            if (startInTray && !allowVisible)
+            {
+                value = false;
+                if (!IsHandleCreated) CreateHandle();
+            }
+            base.SetVisibleCore(value);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (!isInitialized) return;
+            if (WindowState == FormWindowState.Minimized)
+            {
+                if (SettingsService.Load().MinimizeToTray)
+                {
+                    HideToTray();
+                }
+                else
+                {
+                    StopUiClock();
+                    if (musicProgressTimer.Enabled) musicProgressTimer.Stop();
+                    UpdateProcessEfficiency(isHidden: true, isAudioPlaying: musicPlayback.IsPlaying || audioService.IsAmbientPlaying);
+                }
+            }
+            else if (WindowState == FormWindowState.Normal)
+            {
+                StartUiClock();
+                if (musicPlayback.IsPlaying) musicProgressTimer.Start();
+                UpdateProcessEfficiency(isHidden: false, isAudioPlaying: true);
+            }
+        }
+
+        private void UpdateProcessEfficiency(bool isHidden, bool isAudioPlaying)
+        {
+            try
+            {
+                using var process = Process.GetCurrentProcess();
+                if (isHidden && !isAudioPlaying)
+                {
+                    if (process.PriorityClass != ProcessPriorityClass.BelowNormal)
+                    {
+                        process.PriorityClass = ProcessPriorityClass.BelowNormal;
+                    }
+                }
+                else
+                {
+                    if (process.PriorityClass != ProcessPriorityClass.Normal)
+                    {
+                        process.PriorityClass = ProcessPriorityClass.Normal;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private bool HasActiveUpcomingAlarms()
+        {
+            return masterTaskList.Any(t => t.Type == SchedulerService.TaskTypeAlarm &&
+                                           (t.GetState() is TaskState.Scheduled or TaskState.Due) &&
+                                           scheduler.IsScheduledTimeValid(t, clock.Now));
+        }
+
+        [DllImport("psapi.dll")]
+        private static extern bool EmptyWorkingSet(IntPtr hProcess);
+
         // ---- Force-foreground (the "queue popped" jump) ----
 
-        // Windows only lets a process call SetForegroundWindow successfully when it
-        // already owns the foreground (or meets narrow criteria); from the background
-        // the call silently fails and the taskbar button just flashes. The classic
-        // workaround: attach our input queue to the current foreground thread's —
-        // that makes this process part of the foreground input context for the
-        // duration of the call, so the focus steal is permitted.
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
@@ -497,15 +846,10 @@ namespace VibeAlarm
 
         /// <summary>
         /// Brings the window to the true foreground on every fire — including when it
-        /// is hidden to the tray, minimized, or merely open behind other apps (plain
-        /// <see cref="Form.Activate"/> covers only the first two). Best-effort: no
-        /// failure here may ever break the alarm itself.
+        /// is hidden to the tray, minimized, or merely open behind other apps.
         /// </summary>
         private void ForceForeground()
         {
-            // Un-hide from the tray / restore from minimized so there is a visible,
-            // normal-state window to bring forward. Capture the hidden state BEFORE
-            // MarkVisible() clears it.
             bool wasHidden = tray is { IsHidden: true };
             if (tray is { IsHidden: true } hidden)
             {
@@ -539,9 +883,6 @@ namespace VibeAlarm
                     SetForegroundWindow(Handle);
                 }
 
-                // Belt and braces: if the input-queue trick was still denied (e.g. an
-                // elevated foreground window), a momentary topmost toggle forces the
-                // z-order change regardless.
                 if (GetForegroundWindow() != Handle)
                 {
                     TopMost = true;
@@ -561,22 +902,17 @@ namespace VibeAlarm
         private void InitializeTray()
         {
             tray = new TrayService(System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath));
-            // The icon is present for the whole app lifetime (Discord-style), not
-            // only while hidden — the user can always reach Open/Exit from the tray.
             tray.ShowTray();
-            tray.OpenRequested += () =>
-            {
-                Show();
-                tray.MarkVisible();
-                WindowState = FormWindowState.Normal;
-                Activate();
-                timeService.OnResumed();
-            };
+            tray.OpenRequested += () => RestoreFromTray();
             tray.ExitRequested += () =>
             {
                 userInitiatedExit = true;
                 Close();
             };
+            if (startInTray)
+            {
+                tray.MarkHidden();
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -586,13 +922,37 @@ namespace VibeAlarm
             if (!userInitiatedExit && SettingsService.Load().MinimizeToTray)
             {
                 e.Cancel = true;
-                Hide();
-                tray?.MarkHidden();
+                HideToTray();
                 base.OnFormClosing(e);
                 return;
             }
 
-            backgroundAlarmTicker?.Stop();
+            if (HasActiveUpcomingAlarms())
+            {
+                DialogResult answer = MessageBox.Show(
+                    "Are you sure you want to quit VibeAlarm?\n\n" +
+                    "In-app alarms and looping sounds will not ring while the application is closed.\n" +
+                    "(Windows will show a scheduled notification chime if registered, but VibeAlarm will not open automatically.)",
+                    "Quit VibeAlarm?",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (answer != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    userInitiatedExit = false;
+                    return;
+                }
+            }
+
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            SystemEvents.TimeChanged -= OnTimeChanged;
+
+            nextAlarmTimer?.Dispose();
+            nextAlarmTimer = null;
+            StopUiClock();
+            uiReleaseTimer?.Dispose();
+            uiReleaseTimer = null;
             musicProgressTimer?.Stop();
             musicProgressTimer?.Dispose();
             timeService.Dispose();
