@@ -19,6 +19,8 @@
     <!-- GDI+ value types + PrivateFontCollection (FontRegistry). Windows-only package;
          replaced by fonts-by-URI when the WinForms head is retired. -->
     <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 
 </Project>

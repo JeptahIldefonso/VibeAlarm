@@ -28,5 +28,23 @@ namespace VibeAlarm.Models
 
         /// <summary>Last displayed calendar month (yyyy-MM), preserved across restarts.</summary>
         public string LastViewedCalendarMonth { get; set; } = string.Empty;
+
+        /// <summary>Shared master playback volume (0 to 100).</summary>
+        public int MasterVolume { get; set; } = 70;
+
+        /// <summary>Persisted shuffle mode preference for music playback.</summary>
+        public bool MusicShuffle { get; set; }
+
+        /// <summary>Persisted repeat mode preference ("off", "all", "one").</summary>
+        public string MusicRepeatMode { get; set; } = "off";
+
+        /// <summary>Last played track ID for session restore.</summary>
+        public string? LastPlayedTrackId { get; set; }
+
+        /// <summary>Last playback position in milliseconds.</summary>
+        public int LastPlaybackPositionMs { get; set; }
+
+        /// <summary>Persisted list of music folder paths added to the library.</summary>
+        public List<string> MusicFolders { get; set; } = new();
     }
 }

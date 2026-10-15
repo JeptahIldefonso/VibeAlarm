@@ -5,6 +5,7 @@ import { AlarmLayer } from './components/AlarmLayer';
 import { CommandPalette, type Command } from './components/CommandPalette';
 import { Icon, type IconName } from './components/Icon';
 import { TaskModal, type TaskModalState } from './components/TaskModal';
+import { NowPlayingBar } from './components/NowPlayingBar';
 import { AmbientView, useAmbientVolume } from './views/AmbientView';
 import { CalendarView } from './views/CalendarView';
 import { DashboardView } from './views/DashboardView';
@@ -78,6 +79,56 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Global media shortcuts: Space to play/pause, Left/Right arrow to seek +/- 5s
+  useEffect(() => {
+    const onMediaKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        if (state.nowPlaying != null) {
+          e.preventDefault();
+          if (state.nowPlaying.kind === 'track') {
+            if (state.nowPlaying.state === 'playing') {
+              request('musicTransport', { action: 'pause' }).catch(() => {});
+            } else {
+              request('musicTransport', { action: 'resume' }).catch(() => {});
+            }
+          } else if (state.nowPlaying.kind === 'ambient' && state.nowPlaying.state === 'playing') {
+            request('setAmbient', { op: 'stop' }).catch(() => {});
+          }
+        }
+      } else if (e.code === 'ArrowLeft') {
+        if (state.nowPlaying != null && state.nowPlaying.kind === 'track') {
+          e.preventDefault();
+          const newPos = Math.max(0, state.nowPlaying.positionMs - 5000);
+          request('musicTransport', { action: 'seek', positionMs: newPos }).catch(() => {});
+        }
+      } else if (e.code === 'ArrowRight') {
+        if (state.nowPlaying != null && state.nowPlaying.kind === 'track') {
+          e.preventDefault();
+          const duration = state.nowPlaying.durationMs;
+          const newPos =
+            duration > 0
+              ? Math.min(duration, state.nowPlaying.positionMs + 5000)
+              : state.nowPlaying.positionMs + 5000;
+          request('musicTransport', { action: 'seek', positionMs: newPos }).catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onMediaKey);
+    return () => window.removeEventListener('keydown', onMediaKey);
+  }, [state.nowPlaying]);
 
   const openModal = (modalState: TaskModalState) => setTaskModal(modalState);
 
@@ -156,51 +207,66 @@ export default function App() {
         </div>
       </nav>
 
-      <main className={activeView === 'Notes' ? 'content content-notes' : 'content'}>
-        {activeView === 'Dashboard' && (
-          <DashboardView tasks={state.tasks} now={state.now} nextUp={state.nextUp} />
-        )}
-        {activeView === 'Tasks' && (
-          <TasksView
-            tasks={state.tasks}
-            now={state.now}
-            confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
-            openModal={openModal}
+      <div className="main-column">
+        <main className={activeView === 'Notes' ? 'content content-notes' : 'content'}>
+          {activeView === 'Dashboard' && (
+            <DashboardView tasks={state.tasks} now={state.now} nextUp={state.nextUp} />
+          )}
+          {activeView === 'Tasks' && (
+            <TasksView
+              tasks={state.tasks}
+              now={state.now}
+              confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+              openModal={openModal}
+            />
+          )}
+          {activeView === 'Calendar' && (
+            <CalendarView tasks={state.tasks} now={state.now} settings={state.settings} openModal={openModal} />
+          )}
+          {activeView === 'History' && (
+            <HistoryView
+              tasks={state.tasks}
+              now={state.now}
+              confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+              openModal={openModal}
+            />
+          )}
+          {activeView === 'Notes' && (
+            <NotesView
+              notes={state.notes}
+              confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
+            />
+          )}
+          {activeView === 'Ambient' && (
+            <AmbientView
+              playing={state.ambientPlaying}
+              volume={ambientVolume}
+              name={state.ambientName}
+              onLocalVolume={setAmbientVolume}
+              musicFolders={state.musicFolders}
+              musicTracks={state.musicTracks}
+              musicScanning={state.musicScanning}
+              musicScanProgress={state.musicScanProgress}
+              nowPlaying={state.nowPlaying}
+            />
+          )}
+          {activeView === 'Settings' && (
+            <SettingsView
+              settings={state.settings}
+              accents={state.accents}
+              startupEnabled={state.startupEnabled}
+            />
+          )}
+        </main>
+
+        {state.nowPlaying != null && (
+          <NowPlayingBar
+            nowPlaying={state.nowPlaying}
+            queueState={state.musicQueue}
+            onVolumeChange={setAmbientVolume}
           />
         )}
-        {activeView === 'Calendar' && (
-          <CalendarView tasks={state.tasks} now={state.now} settings={state.settings} openModal={openModal} />
-        )}
-        {activeView === 'History' && (
-          <HistoryView
-            tasks={state.tasks}
-            now={state.now}
-            confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
-            openModal={openModal}
-          />
-        )}
-        {activeView === 'Notes' && (
-          <NotesView
-            notes={state.notes}
-            confirmBeforeDelete={state.settings?.confirmBeforeDelete ?? true}
-          />
-        )}
-        {activeView === 'Ambient' && (
-          <AmbientView
-            playing={state.ambientPlaying}
-            volume={ambientVolume}
-            name={state.ambientName}
-            onLocalVolume={setAmbientVolume}
-          />
-        )}
-        {activeView === 'Settings' && (
-          <SettingsView
-            settings={state.settings}
-            accents={state.accents}
-            startupEnabled={state.startupEnabled}
-          />
-        )}
-      </main>
+      </div>
 
       {taskModal != null && <TaskModal state={taskModal} onClose={() => setTaskModal(null)} />}
 

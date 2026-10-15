@@ -33,6 +33,12 @@ namespace VibeAlarm.Services
         /// Regenerated on demand, so this is a cache, not precious data.</summary>
         public static string AssetsCacheDir { get; } = Path.Combine(DataRoot, "Assets");
 
+        /// <summary>music-library.json location for the persisted music index.</summary>
+        public static string MusicLibraryPath { get; } = Path.Combine(DataRoot, "music-library.json");
+
+        /// <summary>Album artwork thumbnail cache (%LOCALAPPDATA%\VibeAlarm\Art).</summary>
+        public static string ArtCacheDir { get; } = Path.Combine(DataRoot, "Art");
+
         static AppPaths()
         {
             try
@@ -40,6 +46,7 @@ namespace VibeAlarm.Services
                 Directory.CreateDirectory(DataRoot);
                 Directory.CreateDirectory(NotesDir);
                 Directory.CreateDirectory(AssetsCacheDir);
+                Directory.CreateDirectory(ArtCacheDir);
                 MigrateLegacyData(AppContext.BaseDirectory, DataRoot);
             }
             catch (Exception ex)

@@ -4,6 +4,9 @@ import type {
   IpcPush,
   IpcRequest,
   IpcResponse,
+  LibraryFolder,
+  MusicScanProgress,
+  MusicTrack,
   NextUpChangedPush,
   NoteItem,
   PushType,
@@ -117,4 +120,7 @@ type PushPayload<TType extends PushType> =
   : TType extends 'ambientChanged' ? AmbientChangedPush
   : TType extends 'settingsChanged' ? AppSettings
   : TType extends 'notesChanged' ? NoteItem[]
+  : TType extends 'musicScanProgress' ? MusicScanProgress
+  : TType extends 'musicTracksBatch' ? MusicTrack[]
+  : TType extends 'musicLibraryChanged' ? { folders: LibraryFolder[]; tracks: MusicTrack[] }
   : never;

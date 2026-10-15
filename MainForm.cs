@@ -24,21 +24,27 @@ namespace VibeAlarm
     public sealed class MainForm : Form
     {
         private const string VirtualHost = "vibealarm.app";
+        private const string ArtVirtualHost = "art.vibealarm.app";
 
         private readonly IClock clock = new Clock();
         private readonly List<TaskItem> masterTaskList = new();
         private readonly TimeService timeService;
         private readonly SchedulerService scheduler;
         private readonly AudioService audioService = new();
+        private readonly IMusicPlayer musicPlayer = new NAudioMusicPlayer();
         private readonly ThemeService themeService = ThemeService.Shared;
+        private readonly MusicLibraryService musicLibrary = new();
+        private readonly MusicPlaybackService musicPlayback;
         private readonly ToastSchedulerService toastScheduler;
 
         private TrayService? tray;
         private WebView2 webView = null!;
         private IpcBridge bridge = null!;
         private System.Windows.Forms.Timer backgroundAlarmTicker = null!;
+        private System.Windows.Forms.Timer musicProgressTimer = null!;
         private string? lastPushedNextUpId;
         private bool userInitiatedExit;
+        private bool resumeMusicAfterAlarm;
 
         public MainForm()
         {
@@ -47,6 +53,11 @@ namespace VibeAlarm
             AppSettings restored = SettingsService.Load();
             themeService.ApplyAccent(restored.AccentColor);
             AudioService.EnsureDefaultAmbientSounds(AppPaths.AssetsCacheDir);
+            audioService.AmbientVolume = restored.MasterVolume;
+            musicPlayer.Volume = restored.MasterVolume;
+            musicPlayback = new MusicPlaybackService(musicPlayer, musicLibrary);
+            musicPlayback.HydrateFromSettings(restored);
+
             // Under the activation lock: a toast Snooze clicked while the app was closed
             // may have rewritten tasks.json during this process's startup.
             lock (ToastSchedulerService.TaskFileLock)
@@ -84,14 +95,130 @@ namespace VibeAlarm
             webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
             _ = webView.EnsureCoreWebView2Async();
 
-            bridge = new IpcBridge(clock, scheduler, masterTaskList, audioService, themeService);
-            bridge.AlarmAnswered += audioService.StopAlarmLoop;
+            bridge = new IpcBridge(clock, scheduler, masterTaskList, audioService, themeService, musicLibrary, musicPlayer, musicPlayback);
+            bridge.AlarmAnswered += () =>
+            {
+                audioService.StopAlarmLoop();
+                if (resumeMusicAfterAlarm)
+                {
+                    resumeMusicAfterAlarm = false;
+                    musicPlayback.Resume();
+                }
+            };
             bridge.Persisted += toastScheduler.Reconcile;
 
             InitializeServices();
             audioService.AmbientPlayingChanged += _ => bridge.Push(
                 "ambientChanged",
                 new { playing = audioService.IsAmbientPlaying, volume = audioService.AmbientVolume, name = audioService.ActiveAmbientName });
+
+            // Music library events (marshaled to UI thread for WebView2)
+            musicLibrary.ScanProgress += progress =>
+            {
+                if (InvokeRequired) BeginInvoke(() => bridge.Push("musicScanProgress", progress));
+                else bridge.Push("musicScanProgress", progress);
+            };
+
+            musicLibrary.TracksBatch += batch =>
+            {
+                if (InvokeRequired) BeginInvoke(() => bridge.Push("musicTracksBatch", batch));
+                else bridge.Push("musicTracksBatch", batch);
+            };
+
+            musicLibrary.LibraryChanged += tracks =>
+            {
+                if (InvokeRequired) BeginInvoke(() => bridge.Push("musicLibraryChanged", new { folders = musicLibrary.Folders, tracks }));
+                else bridge.Push("musicLibraryChanged", new { folders = musicLibrary.Folders, tracks });
+            };
+
+            musicLibrary.ArtBatchReady += batch =>
+            {
+                var payload = batch.Select(b => new { trackId = b.TrackId, artKey = b.ArtKey }).ToArray();
+                if (InvokeRequired) BeginInvoke(() => bridge.Push("musicArtBatch", payload));
+                else bridge.Push("musicArtBatch", payload);
+            };
+
+            // Music playback progress ticker (approx 4 times per second = 250ms)
+            musicProgressTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            musicProgressTimer.Tick += (s, e) =>
+            {
+                if (musicPlayback.IsPlaying)
+                {
+                    bridge.Push("musicProgress", new
+                    {
+                        positionMs = musicPlayback.GetPositionMs(),
+                        durationMs = musicPlayback.GetDurationMs()
+                    });
+                }
+                else
+                {
+                    musicProgressTimer.Stop();
+                }
+            };
+
+            musicPlayback.TrackChanged += track =>
+            {
+                if (InvokeRequired) BeginInvoke(() =>
+                {
+                    bridge.Push("musicTrackChanged", track);
+                    if (track != null)
+                    {
+                        bridge.Push("musicProgress", new
+                        {
+                            positionMs = 0,
+                            durationMs = track.DurationMs > 0 ? track.DurationMs : musicPlayback.GetDurationMs()
+                        });
+                    }
+                });
+                else
+                {
+                    bridge.Push("musicTrackChanged", track);
+                    if (track != null)
+                    {
+                        bridge.Push("musicProgress", new
+                        {
+                            positionMs = 0,
+                            durationMs = track.DurationMs > 0 ? track.DurationMs : musicPlayback.GetDurationMs()
+                        });
+                    }
+                }
+            };
+
+            musicPlayback.StateChanged += state =>
+            {
+                if (InvokeRequired) BeginInvoke(() =>
+                {
+                    if (state == "playing") musicProgressTimer.Start();
+                    else musicProgressTimer.Stop();
+                    bridge.Push("musicState", new { state });
+                });
+                else
+                {
+                    if (state == "playing") musicProgressTimer.Start();
+                    else musicProgressTimer.Stop();
+                    bridge.Push("musicState", new { state });
+                }
+            };
+
+            musicPlayback.QueueStateChanged += qState =>
+            {
+                if (InvokeRequired) BeginInvoke(() => bridge.Push("musicQueueChanged", qState));
+                else bridge.Push("musicQueueChanged", qState);
+            };
+
+            musicPlayback.Error += (msg, trackId) =>
+            {
+                if (InvokeRequired) BeginInvoke(() =>
+                {
+                    bridge.Push("musicError", new { message = msg, trackId });
+                    bridge.Push("musicLibraryChanged", new { folders = musicLibrary.Folders, tracks = musicLibrary.Tracks });
+                });
+                else
+                {
+                    bridge.Push("musicError", new { message = msg, trackId });
+                    bridge.Push("musicLibraryChanged", new { folders = musicLibrary.Folders, tracks = musicLibrary.Tracks });
+                }
+            };
 
             InitializeTray();
 
@@ -140,6 +267,11 @@ namespace VibeAlarm
             core.SetVirtualHostNameToFolderMapping(
                 VirtualHost,
                 Path.Combine(AppContext.BaseDirectory, "ui"),
+                CoreWebView2HostResourceAccessKind.Allow);
+
+            core.SetVirtualHostNameToFolderMapping(
+                ArtVirtualHost,
+                AppPaths.ArtCacheDir,
                 CoreWebView2HostResourceAccessKind.Allow);
 
             bridge.Attach(core);
@@ -244,6 +376,17 @@ namespace VibeAlarm
                 return;
             }
 
+            // Pause music during alarm; will resume once alarm is answered
+            if (musicPlayback.IsPlaying)
+            {
+                resumeMusicAfterAlarm = true;
+                musicPlayback.Pause();
+            }
+            else
+            {
+                resumeMusicAfterAlarm = false;
+            }
+
             // The OS toast is no longer suppressed at fire time: the occurrence's
             // still-scheduled toast is removed (so it can't double-announce) and an
             // identical one is posted immediately — the alarm is announced on the
@@ -290,6 +433,11 @@ namespace VibeAlarm
                 finally
                 {
                     audioService.StopAlarmLoop();
+                    if (resumeMusicAfterAlarm)
+                    {
+                        resumeMusicAfterAlarm = false;
+                        musicPlayback.Resume();
+                    }
                 }
             }
         }
@@ -445,10 +593,15 @@ namespace VibeAlarm
             }
 
             backgroundAlarmTicker?.Stop();
+            musicProgressTimer?.Stop();
+            musicProgressTimer?.Dispose();
             timeService.Dispose();
             tray?.HideTray();
             tray?.Dispose();
             audioService.Dispose();
+            musicLibrary.ArtService.CancelCurrentPass();
+            musicLibrary.ArtService.Dispose();
+            musicPlayback?.Dispose();
             base.OnFormClosing(e);
         }
     }

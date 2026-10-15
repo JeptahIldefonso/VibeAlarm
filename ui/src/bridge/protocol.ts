@@ -49,6 +49,43 @@ export interface AppSettings {
   enableNotifications: boolean;
   enableAlarmSound: boolean;
   confirmBeforeDelete: boolean;
+  musicFolders?: string[];
+}
+
+/** A single track in the music library with TagLibSharp-extracted metadata. */
+export interface MusicTrack {
+  id: string;
+  path: string;
+  folderPath: string;
+  title: string;
+  artist: string;
+  album: string;
+  year?: number | null;
+  genre: string;
+  trackNumber?: number | null;
+  durationMs: number;
+  fileSize: number;
+  modifiedAtUtc: string;
+  addedAt: string;
+  available: boolean;
+  artKey?: string | null;
+  artChecked?: boolean;
+}
+
+/** A registered music folder in the library. */
+export interface LibraryFolder {
+  path: string;
+  addedAt: string;
+  lastScannedAt: string;
+  trackCount: number;
+  reachable: boolean;
+}
+
+/** Background scan progress event payload. */
+export interface MusicScanProgress {
+  folder: string;
+  songsFoundSoFar: number;
+  done: boolean;
 }
 
 /** One named accent preset — colors as #RRGGBB strings (AccentDto on the host). */
@@ -107,6 +144,38 @@ export interface AmbientChangedPush {
   name: string | null;
 }
 
+export interface NowPlayingState {
+  kind: 'track' | 'ambient';
+  id?: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  artKey?: string | null;
+  durationMs: number;
+  positionMs: number;
+  state: 'playing' | 'paused' | 'stopped';
+  volume: number;
+  muted: boolean;
+}
+
+export interface MusicQueueState {
+  shuffle: boolean;
+  repeatMode: 'off' | 'all' | 'one';
+  queueCount: number;
+  currentIndex: number;
+  currentTrackId?: string | null;
+}
+
+export type MusicTransportCommand =
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'stop' }
+  | { action: 'seek'; positionMs: number }
+  | { action: 'next' }
+  | { action: 'previous' }
+  | { action: 'shuffle'; enabled?: boolean }
+  | { action: 'repeat'; mode?: 'off' | 'all' | 'one' };
+
 export interface InitialState {
   now: string;
   tasks: TaskItem[];
@@ -116,6 +185,16 @@ export interface InitialState {
   startupEnabled: boolean;
   ambient: { playing: boolean; volume: number; name: string | null };
   notes: NoteItem[];
+  music?: {
+    folders: LibraryFolder[];
+    tracks: MusicTrack[];
+    currentTrack?: MusicTrack | null;
+    state?: 'playing' | 'paused' | 'stopped';
+    positionMs?: number;
+    durationMs?: number;
+    volume?: number;
+    queue?: MusicQueueState;
+  };
 }
 
 export interface StateSnapshot {
@@ -156,7 +235,21 @@ export type PushType =
   | 'reminderFired'
   | 'ambientChanged'
   | 'settingsChanged'
-  | 'notesChanged';
+  | 'notesChanged'
+  | 'musicScanProgress'
+  | 'musicTracksBatch'
+  | 'musicLibraryChanged'
+  | 'musicTrackChanged'
+  | 'musicState'
+  | 'musicProgress'
+  | 'musicQueueChanged'
+  | 'musicArtBatch'
+  | 'musicError';
+
+export interface MusicArtBatchItem {
+  trackId: string;
+  artKey: string | null;
+}
 
 /** Typed request catalogue: `request('createTask', input)` resolves to TaskItem. */
 export interface RequestMap {
@@ -187,6 +280,39 @@ export interface RequestMap {
   exportNote: { payload: { title: string; content: string }; result: { path: string } | null };
   /** Opens the note in a standalone lightweight notepad window. */
   detachNote: { payload: { id: string }; result: { ok: boolean } };
+  // ---- Music Library (Phase 1) ----
+  browseAmbientFolder: {
+    payload: void;
+    result: { folder: LibraryFolder; tracks: MusicTrack[] } | null;
+  };
+  removeMusicFolder: {
+    payload: { path: string };
+    result: { ok: boolean };
+  };
+  rescanMusicFolder: {
+    payload: { path?: string };
+    result: { ok: boolean };
+  };
+  getMusicLibrary: {
+    payload: void;
+    result: { folders: LibraryFolder[]; tracks: MusicTrack[] };
+  };
+  // ---- Music Playback (Phase 2 & 4) ----
+  playTrack: {
+    payload: { id: string; queue?: string[]; shuffle?: boolean };
+    result: { ok: boolean; track?: MusicTrack };
+  };
+  musicTransport: {
+    payload: MusicTransportCommand;
+    result: {
+      ok: boolean;
+      state?: string;
+      positionMs?: number;
+      track?: MusicTrack;
+      shuffle?: boolean;
+      repeatMode?: 'off' | 'all' | 'one';
+    };
+  };
 }
 
 /** A playable ambient track served by the host. */

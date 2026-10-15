@@ -25,6 +25,9 @@ namespace VibeAlarm.Services
         private readonly List<TaskItem> tasks;
         private readonly AudioService audio;
         private readonly ThemeService theme;
+        private readonly MusicLibraryService musicLibrary;
+        private readonly IMusicPlayer musicPlayer;
+        private readonly MusicPlaybackService musicPlayback;
 
         private readonly List<CoreWebView2> activeCores = new();
         private CoreWebView2? mainCore;
@@ -43,13 +46,24 @@ namespace VibeAlarm.Services
         /// scheduled toasts with the new task list.</summary>
         public event Action? Persisted;
 
-        public IpcBridge(IClock clock, SchedulerService scheduler, List<TaskItem> tasks, AudioService audio, ThemeService theme)
+        public IpcBridge(
+            IClock clock,
+            SchedulerService scheduler,
+            List<TaskItem> tasks,
+            AudioService audio,
+            ThemeService theme,
+            MusicLibraryService musicLibrary,
+            IMusicPlayer musicPlayer,
+            MusicPlaybackService musicPlayback)
         {
             this.clock = clock;
             this.scheduler = scheduler;
             this.tasks = tasks;
             this.audio = audio;
             this.theme = theme;
+            this.musicLibrary = musicLibrary;
+            this.musicPlayer = musicPlayer;
+            this.musicPlayback = musicPlayback;
             RegisterHandlers();
         }
 
@@ -433,19 +447,202 @@ namespace VibeAlarm.Services
                         {
                             throw new InvalidOperationException("Ambient sound file not found.");
                         }
-                        bool started = audio.PlayAmbientFile(path, GetString(payload, "displayName") ?? Path.GetFileNameWithoutExtension(path));
+                        // Rule 3: Single audio source - starting ambient stops music
+                        if (musicPlayback.IsPlaying || musicPlayback.IsPaused)
+                        {
+                            musicPlayback.Stop();
+                            Push("musicTrackChanged", null);
+                        }
+                        string displayName = GetString(payload, "displayName") ?? Path.GetFileNameWithoutExtension(path);
+                        bool started = audio.PlayAmbientFile(path, displayName);
+                        Push("ambientChanged", new { playing = audio.IsAmbientPlaying, volume = audio.AmbientVolume, name = audio.ActiveAmbientName });
                         return new { ok = started };
                     case "stop":
                         audio.StopAmbientAudio();
+                        Push("ambientChanged", new { playing = false, volume = audio.AmbientVolume, name = (string?)null });
                         return new { ok = true };
                     case "volume":
-                        audio.AmbientVolume = Math.Clamp(GetInt(payload, "volume") ?? audio.AmbientVolume, 0, 100);
+                        int vol = Math.Clamp(GetInt(payload, "volume") ?? audio.AmbientVolume, 0, 100);
+                        audio.AmbientVolume = vol;
                         audio.ApplyAmbientVolume();
+                        musicPlayback.Volume = vol;
+                        AppSettings settings = SettingsService.Load();
+                        if (settings.MasterVolume != vol)
+                        {
+                            settings.MasterVolume = vol;
+                            SettingsService.Save(settings);
+                        }
                         Push("ambientChanged", new { playing = audio.IsAmbientPlaying, volume = audio.AmbientVolume, name = audio.ActiveAmbientName });
                         return new { volume = audio.AmbientVolume };
                     default:
                         throw new InvalidOperationException("Unknown ambient op.");
                 }
+            };
+
+            // ---- Music Library & Playback (Phase 1, 2 & 4) ----
+
+            handlers["playTrack"] = payload =>
+            {
+                string? id = GetString(payload, "id");
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    throw new InvalidOperationException("Track ID is required.");
+                }
+
+                // Rule 3: Single audio source across both engines - starting music stops ambient
+                audio.StopAmbientAudio();
+                Push("ambientChanged", new { playing = false, volume = audio.AmbientVolume, name = (string?)null });
+
+                List<string>? queue = null;
+                if (payload.HasValue && payload.Value.TryGetProperty("queue", out JsonElement queueProp) && queueProp.ValueKind == JsonValueKind.Array)
+                {
+                    queue = new List<string>();
+                    foreach (var item in queueProp.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            var qId = item.GetString();
+                            if (!string.IsNullOrEmpty(qId)) queue.Add(qId);
+                        }
+                    }
+                }
+
+                bool? shuffleParam = null;
+                if (TryGetBool(payload, "shuffle", out bool shuf))
+                {
+                    shuffleParam = shuf;
+                }
+
+                bool ok = musicPlayback.PlayTrack(id, queue, shuffleParam);
+                return new { ok, track = musicPlayback.CurrentTrack };
+            };
+
+            handlers["musicTransport"] = payload =>
+            {
+                string? action = GetString(payload, "action") ?? GetString(payload, "op");
+                switch (action?.ToLowerInvariant())
+                {
+                    case "pause":
+                        musicPlayback.Pause();
+                        return new { ok = true, state = "paused" };
+
+                    case "resume":
+                        // Rule 3: Single audio source - resuming music stops ambient
+                        audio.StopAmbientAudio();
+                        Push("ambientChanged", new { playing = false, volume = audio.AmbientVolume, name = (string?)null });
+                        musicPlayback.Resume();
+                        return new { ok = true, state = "playing" };
+
+                    case "stop":
+                        musicPlayback.Stop();
+                        Push("musicTrackChanged", null);
+                        return new { ok = true, state = "stopped" };
+
+                    case "seek":
+                        int pos = GetInt(payload, "positionMs") ?? GetInt(payload, "position") ?? 0;
+                        musicPlayback.Seek(pos);
+                        int currentPos = musicPlayback.GetPositionMs();
+                        int duration = musicPlayback.GetDurationMs();
+                        Push("musicProgress", new { positionMs = currentPos, durationMs = duration });
+                        return new { ok = true, positionMs = currentPos };
+
+                    case "next":
+                        bool nextOk = musicPlayback.Next(autoAdvance: false);
+                        return new { ok = nextOk, track = musicPlayback.CurrentTrack };
+
+                    case "previous":
+                        bool prevOk = musicPlayback.Previous();
+                        return new { ok = prevOk, track = musicPlayback.CurrentTrack };
+
+                    case "shuffle":
+                        if (TryGetBool(payload, "enabled", out bool enableShuffle))
+                        {
+                            musicPlayback.SetShuffle(enableShuffle);
+                        }
+                        else
+                        {
+                            musicPlayback.SetShuffle(!musicPlayback.Shuffle);
+                        }
+                        return new { ok = true, shuffle = musicPlayback.Shuffle };
+
+                    case "repeat":
+                        string? mode = GetString(payload, "mode");
+                        if (string.IsNullOrEmpty(mode))
+                        {
+                            mode = musicPlayback.RepeatMode switch
+                            {
+                                "off" => "all",
+                                "all" => "one",
+                                _ => "off"
+                            };
+                        }
+                        musicPlayback.SetRepeatMode(mode);
+                        return new { ok = true, repeatMode = musicPlayback.RepeatMode };
+
+                    default:
+                        throw new InvalidOperationException($"Unknown music transport action '{action}'.");
+                }
+            };
+
+            handlers["browseAmbientFolder"] = _ =>
+            {
+                using var dialog = new FolderBrowserDialog
+                {
+                    Description = "Select a music folder to add to your library",
+                    UseDescriptionForTitle = true,
+                };
+                IWin32Window? owner = Form.ActiveForm;
+                DialogResult result = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+                if (result != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                {
+                    return null;
+                }
+
+                string folderPath = dialog.SelectedPath;
+                var folder = musicLibrary.AddFolderAsync(folderPath).GetAwaiter().GetResult();
+
+                AppSettings settings = SettingsService.Load();
+                if (!settings.MusicFolders.Any(f => string.Equals(f, folder.Path, StringComparison.OrdinalIgnoreCase)))
+                {
+                    settings.MusicFolders.Add(folder.Path);
+                    SettingsService.Save(settings);
+                }
+
+                return new
+                {
+                    folder,
+                    tracks = musicLibrary.Tracks
+                };
+            };
+
+            handlers["removeMusicFolder"] = payload =>
+            {
+                string? path = GetString(payload, "path");
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    throw new InvalidOperationException("Folder path is required.");
+                }
+
+                musicLibrary.RemoveFolder(path);
+
+                AppSettings settings = SettingsService.Load();
+                settings.MusicFolders.RemoveAll(f => string.Equals(f, path, StringComparison.OrdinalIgnoreCase));
+                SettingsService.Save(settings);
+
+                return new { ok = true };
+            };
+
+            handlers["rescanMusicFolder"] = payload =>
+            {
+                string? path = GetString(payload, "path");
+                _ = musicLibrary.RescanAsync(path);
+                return new { ok = true };
+            };
+
+            handlers["getMusicLibrary"] = _ => new
+            {
+                folders = musicLibrary.Folders,
+                tracks = musicLibrary.Tracks
             };
         }
 
@@ -460,6 +657,17 @@ namespace VibeAlarm.Services
             startupEnabled = SettingsService.IsRunOnStartupEnabled(),
             ambient = new { playing = audio.IsAmbientPlaying, volume = audio.AmbientVolume, name = audio.ActiveAmbientName },
             notes = NoteStorageService.Load(),
+            music = new
+            {
+                folders = musicLibrary.Folders,
+                tracks = musicLibrary.Tracks,
+                currentTrack = musicPlayback.CurrentTrack,
+                state = musicPlayback.IsPlaying ? "playing" : (musicPlayback.IsPaused ? "paused" : "stopped"),
+                positionMs = musicPlayback.GetPositionMs(),
+                durationMs = musicPlayback.GetDurationMs(),
+                volume = musicPlayback.Volume,
+                queue = musicPlayback.GetQueueState()
+            },
         };
 
         /// <summary>A leaner snapshot for on-demand refreshes.</summary>
