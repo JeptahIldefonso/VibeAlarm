@@ -222,14 +222,30 @@ namespace VibeAlarm.Services
         }
 
         /// <summary>Best-effort diagnostics — toast failures never break firing, but
-        /// they must not be silent either.</summary>
+        /// they must not be silent either. Capped at 50 KB, retaining newest entries.</summary>
         private static void Log(string message)
         {
             try
             {
-                File.AppendAllText(
-                    Path.Combine(AppPaths.DataRoot, "toast-diagnostics.log"),
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+                string logPath = Path.Combine(AppPaths.DataRoot, "toast-diagnostics.log");
+                string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
+
+                const long maxLogSizeBytes = 50 * 1024;
+                if (File.Exists(logPath) && new FileInfo(logPath).Length > maxLogSizeBytes)
+                {
+                    string existing = File.ReadAllText(logPath);
+                    int keepChars = Math.Min(existing.Length, 25 * 1024);
+                    string trimmed = existing.Substring(existing.Length - keepChars);
+                    int firstNewline = trimmed.IndexOf('\n');
+                    if (firstNewline >= 0 && firstNewline < trimmed.Length - 1)
+                    {
+                        trimmed = trimmed[(firstNewline + 1)..];
+                    }
+                    File.WriteAllText(logPath, trimmed + entry);
+                    return;
+                }
+
+                File.AppendAllText(logPath, entry);
             }
             catch (Exception)
             {

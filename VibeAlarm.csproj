@@ -14,6 +14,8 @@
          for net5.0+ TFMs regardless of UseWPF; with UseWindowsForms=true that surfaces
          MSB3277 (WindowsBase 4.0 vs 5.0 unification). The WPF assembly is never used
          here — the conflict is benign and suppressed. -->
+    <!-- Suppress XML documentation files from packages (WebView2) in publish output -->
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
