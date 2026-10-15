@@ -99,25 +99,5 @@ namespace VibeAlarm.UI.Theming
         public const int Hairline = 1;
         public const int RadiusMax = 12;
         public const int SidebarWidth = 220;
-
-        // ---- Typography ----
-        // The editorial/technical contrast: geometric grotesk for headers + nav + greetings,
-        // monospace for every digit-heavy or status label (times, dates, counts, statuses).
-        // Faces are embedded OFL fonts registered by FontRegistry; the names below are the
-        // preferred families, and FontRegistry falls back to a Windows-native equivalent per
-        // role when a face is unavailable. Never construct `new Font("Inter", ...)` directly —
-        // an unregistered family silently substitutes Microsoft Sans Serif.
-        public const string DisplayFont = "Inter";
-        public const string BodyFont = "Inter";
-        public const string MonoFont = "JetBrains Mono";
-
-        public static Font Display(float size, FontStyle style = FontStyle.Bold)
-            => FontRegistry.Display(size, style);
-
-        public static Font Body(float size, FontStyle style = FontStyle.Regular)
-            => FontRegistry.Body(size, style);
-
-        public static Font Mono(float size, FontStyle style = FontStyle.Regular)
-            => FontRegistry.Mono(size, style);
     }
 }
