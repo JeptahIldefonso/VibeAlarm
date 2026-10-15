@@ -12,6 +12,7 @@ build_staging/
 VibeAlarmInstaller.exe
 VibeAlarmInstaller.zip
 ~VibeAlarmInstaller.DDF
+VibeAlarm.exe
 
 # Runtime-generated app data
 tasks.json
